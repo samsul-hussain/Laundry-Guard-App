@@ -1,0 +1,6 @@
+{
+  "name": "LaundryGuard",
+  "description": "Hyper-local weather alerts for drying laundry outdoors. Featuring AI-powered drying time estimates and optimal window scheduling every 5 minutes.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
