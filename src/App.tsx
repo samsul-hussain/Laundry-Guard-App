@@ -171,10 +171,34 @@ export default function App() {
 
   useEffect(() => {
     const handleError = (event: ErrorEvent) => {
-      setUnhandledError(event.message);
+      const msg = event.message || "";
+      if (
+        !msg ||
+        msg.includes("property fetch") ||
+        msg.includes("ResizeObserver") ||
+        msg.includes("Extension") ||
+        msg.includes("extension") ||
+        msg.includes("chrome-extension")
+      ) {
+        console.warn("Ignored benign environment error:", msg);
+        return;
+      }
+      setUnhandledError(msg);
     };
     const handleRejection = (event: PromiseRejectionEvent) => {
-      setUnhandledError(String(event.reason));
+      const reason = String(event.reason || "");
+      if (
+        !reason ||
+        reason.includes("property fetch") ||
+        reason.includes("ResizeObserver") ||
+        reason.includes("Extension") ||
+        reason.includes("extension") ||
+        reason.includes("chrome-extension")
+      ) {
+        console.warn("Ignored benign environment rejection:", reason);
+        return;
+      }
+      setUnhandledError(reason);
     };
     window.addEventListener('error', handleError);
     window.addEventListener('unhandledrejection', handleRejection);
