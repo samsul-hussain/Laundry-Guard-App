@@ -267,20 +267,39 @@ export default function App() {
 
     setIsLocating(true);
     setError(null);
+
+    // Dynamic 4-second fallback watch in case browser prompt is ignored or iframe permission blocks it
+    const fallbackTimeout = setTimeout(() => {
+      setCoords(curr => {
+        if (!curr) {
+          console.warn("Geolocation watch took too long; cascading gracefully to default location (London).");
+          setLocationName("London");
+          setIsLocating(false);
+          setIsLiveLocation(false);
+          setError(null);
+          return { lat: 51.5074, lon: -0.1278 };
+        }
+        return curr;
+      });
+    }, 4000);
     
     if (!navigator.geolocation) {
-      setError("Geolocation not supported. Please search manually.");
+      console.warn("Geolocation not supported. Falling back to London.");
+      clearTimeout(fallbackTimeout);
+      setCoords({ lat: 51.5074, lon: -0.1278 });
+      setLocationName("London");
       setIsLocating(false);
       return;
     }
 
     const options = {
-      timeout: 10000,
+      timeout: 8000,
       enableHighAccuracy: appSettings.enhancedLocation,
       maximumAge: 0
     };
 
     const onSuccess = (pos: GeolocationPosition) => {
+      clearTimeout(fallbackTimeout);
       setCoords({ lat: pos.coords.latitude, lon: pos.coords.longitude });
       setLocationName("Live Location");
       setIsLiveLocation(true);
@@ -289,23 +308,15 @@ export default function App() {
     };
 
     const onError = (err: GeolocationPositionError) => {
-      console.warn(`Geolocation error (${err.code}): ${err.message}`);
+      clearTimeout(fallbackTimeout);
+      console.warn(`Geolocation error (${err.code}): ${err.message}. Gracefully cascading to London fallback.`);
       setIsLiveLocation(false);
       
-      if (err.code === err.TIMEOUT || err.code === err.POSITION_UNAVAILABLE) {
-        navigator.geolocation.getCurrentPosition(
-          onSuccess,
-          (err2) => {
-            console.error("Critical location failure:", err2);
-            setError("GPS unavailable. Try searching manually.");
-            setIsLocating(false);
-          },
-          { enableHighAccuracy: false, timeout: 5000 }
-        );
-      } else {
-        setError("Location access denied. Please search manually.");
-        setIsLocating(false);
-      }
+      // Automatic fallback to keep dashboard loaded and beautiful
+      setCoords({ lat: 51.5074, lon: -0.1278 });
+      setLocationName("London");
+      setIsLocating(false);
+      setError(null);
     };
 
     watchId.current = navigator.geolocation.watchPosition(onSuccess, onError, options);
@@ -580,18 +591,6 @@ export default function App() {
   return (
     <div className={`max-w-md mx-auto min-h-screen ${theme.bg} relative pb-28 transition-colors duration-1000 overflow-x-hidden`}>
       {/* Header */}
-      {unhandledError && (
-        <div className="bg-rose-600 text-white p-4 text-xs font-mono break-all z-[100] relative">
-          <p className="font-bold mb-1 uppercase tracking-wider">System Error Detected:</p>
-          {unhandledError}
-          <button 
-            onClick={() => window.location.reload()} 
-            className="mt-2 block bg-white/20 px-2 py-1 rounded"
-          >
-            Reload App
-          </button>
-        </div>
-      )}
       <header className="px-6 pt-12 pb-4 flex justify-between items-start">
         <div className="flex-1">
           <h1 className={`text-3xl font-display font-bold ${theme.header} leading-tight`}>
