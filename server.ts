@@ -219,8 +219,41 @@ app.post("/api/schedule", async (req, res) => {
     });
 
     res.json(JSON.parse(result.text || "{}"));
-  } catch (error) {
-    res.status(500).json({ error: "Schedule generation failed" });
+  } catch (error: any) {
+    const errorMsg = error.message || String(error);
+    console.error("[Schedule] Gemini error (falling back to heuristic):", errorMsg);
+
+    const probs = Array.isArray(hourlyProbs) ? hourlyProbs : [];
+    const temps = Array.isArray(hourlyTemps) ? hourlyTemps : [];
+    
+    let bestStartHour = 0;
+    let bestScore = -999999;
+    
+    const limit = Math.min(24, probs.length - 2);
+    for (let i = 0; i < limit; i++) {
+      const windowProbs = probs.slice(i, i + 3);
+      const windowTemps = temps.slice(i, i + 3);
+      
+      const avgProb = windowProbs.reduce((a, b) => a + b, 0) / (windowProbs.length || 1);
+      const avgTemp = windowTemps.reduce((a, b) => a + b, 0) / (windowTemps.length || 1);
+      
+      const rainPenalty = avgProb * 4;
+      const score = avgTemp * 2 - rainPenalty;
+      
+      if (score > bestScore) {
+        bestScore = score;
+        bestStartHour = i;
+      }
+    }
+    
+    const confidence = Math.max(10, Math.min(100, Math.round(100 - (probs[bestStartHour] || 0) * 0.8)));
+    
+    res.json({
+      bestStartHour,
+      confidence,
+      reasoning: "Heuristic forecast: optimal combination of warmth and low rain probability.",
+      summary: `Hanging clothes in ${bestStartHour} hours provides the safest window with ${confidence}% confidence.`
+    });
   }
 });
 

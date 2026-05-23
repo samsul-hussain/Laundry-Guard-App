@@ -170,35 +170,41 @@ export default function App() {
   const [unhandledError, setUnhandledError] = useState<string | null>(null);
 
   useEffect(() => {
+    const isBenignError = (errStr: string) => {
+      const lower = errStr.toLowerCase();
+      return (
+        !lower ||
+        lower.includes("property fetch") ||
+        lower.includes("only a getter") ||
+        lower.includes("resizeobserver") ||
+        lower.includes("extension") ||
+        lower.includes("chrome-extension") ||
+        lower.includes("safari-extension") ||
+        lower.includes("cross-origin")
+      );
+    };
+
     const handleError = (event: ErrorEvent) => {
       const msg = event.message || "";
-      if (
-        !msg ||
-        msg.includes("property fetch") ||
-        msg.includes("ResizeObserver") ||
-        msg.includes("Extension") ||
-        msg.includes("extension") ||
-        msg.includes("chrome-extension")
-      ) {
-        console.warn("Ignored benign environment error:", msg);
+      const errorMsg = event.error?.message || "";
+      const errorStr = String(event.error || "");
+      
+      if (isBenignError(msg) || isBenignError(errorMsg) || isBenignError(errorStr)) {
+        console.warn("Ignored benign environment error:", msg, errorMsg, errorStr);
         return;
       }
-      setUnhandledError(msg);
+      setUnhandledError(msg || errorMsg || "Unknown Error");
     };
     const handleRejection = (event: PromiseRejectionEvent) => {
-      const reason = String(event.reason || "");
-      if (
-        !reason ||
-        reason.includes("property fetch") ||
-        reason.includes("ResizeObserver") ||
-        reason.includes("Extension") ||
-        reason.includes("extension") ||
-        reason.includes("chrome-extension")
-      ) {
-        console.warn("Ignored benign environment rejection:", reason);
+      const reasonObj = event.reason;
+      const reasonStr = String(reasonObj || "");
+      const reasonMsg = reasonObj?.message || "";
+      
+      if (isBenignError(reasonStr) || isBenignError(reasonMsg)) {
+        console.warn("Ignored benign environment rejection:", reasonStr, reasonMsg);
         return;
       }
-      setUnhandledError(reason);
+      setUnhandledError(reasonStr || reasonMsg || "Unhandled Promise Rejection");
     };
     window.addEventListener('error', handleError);
     window.addEventListener('unhandledrejection', handleRejection);
