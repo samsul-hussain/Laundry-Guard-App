@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Bell, Mail, Sliders, Save, Info, BellOff, MailQuestion, Navigation } from 'lucide-react';
+import { X, Bell, Mail, Sliders, Save, Info, BellOff, MailQuestion, Navigation, Sparkles } from 'lucide-react';
 import { useState, useEffect } from 'react';
 
 interface SettingsModalProps {
@@ -15,6 +15,7 @@ export interface AppSettings {
   emailNotifications: boolean;
   emailAddress: string;
   enhancedLocation: boolean;
+  enableAI: boolean;
 }
 
 export default function SettingsModal({ isOpen, onClose, settings, onSave }: SettingsModalProps) {
@@ -55,6 +56,27 @@ export default function SettingsModal({ isOpen, onClose, settings, onSave }: Set
             </div>
 
             <div className="space-y-8 overflow-y-auto max-h-[65vh] pb-24 no-scrollbar">
+              {/* Gemini AI Core */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest px-1">
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-500 fill-indigo-100 dark:fill-none" /> Gemini Intelligent Analysis
+                </div>
+                <div className="bg-slate-50 p-5 rounded-2xl border border-slate-100 flex justify-between items-center group transition-all hover:bg-white hover:border-blue-100 hover:shadow-sm">
+                  <div>
+                    <div className="font-bold text-slate-900">AI-Powered Drying Estimates</div>
+                    <div className="text-xs text-slate-500">De-prioritizes heuristic fallback in favor of advanced cognitive weather insight models</div>
+                  </div>
+                  <button 
+                    onClick={() => setLocalSettings(p => ({ ...p, enableAI: !p.enableAI }))}
+                    className={`relative inline-flex h-7 w-12 items-center rounded-full transition-colors focus:outline-none ${localSettings.enableAI ? 'bg-blue-600' : 'bg-slate-200'}`}
+                  >
+                    <span 
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white transition-transform ${localSettings.enableAI ? 'translate-x-6' : 'translate-x-1'}`} 
+                    />
+                  </button>
+                </div>
+              </div>
+
               {/* Enhanced Precision */}
               <div className="space-y-4">
                 <div className="flex items-center gap-2 text-xs font-bold text-slate-400 uppercase tracking-widest px-1">

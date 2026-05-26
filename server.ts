@@ -173,13 +173,14 @@ app.post("/api/dryness", async (req, res) => {
     res.json(data);
   } catch (error: any) {
     const errorMsg = error.message || String(error);
-    console.error("[Dryness] Gemini error (falling back to heuristic):", errorMsg);
-    
     const fallback = calculateHeuristic() as any;
     fallback.insight = "Evaporation rate is currently calculated using standard thermodynamic models.";
     
-    if (errorMsg.includes("429") || errorMsg.includes("quota")) {
-      fallback.tip = "Using standard physics estimate (AI is busy).";
+    if (errorMsg.includes("429") || errorMsg.includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED")) {
+      console.warn("[Dryness] Gemini Free-tier Quota Exceeded. Safely falling back to physics heuristic.");
+      fallback.tip = "Using standard physics estimate (AI quota busy).";
+    } else {
+      console.error("[Dryness] Gemini error (falling back to heuristic):", errorMsg);
     }
 
     res.json(fallback);
@@ -221,7 +222,12 @@ app.post("/api/schedule", async (req, res) => {
     res.json(JSON.parse(result.text || "{}"));
   } catch (error: any) {
     const errorMsg = error.message || String(error);
-    console.error("[Schedule] Gemini error (falling back to heuristic):", errorMsg);
+    
+    if (errorMsg.includes("429") || errorMsg.includes("quota") || errorMsg.includes("RESOURCE_EXHAUSTED")) {
+      console.warn("[Schedule] Gemini Free-tier Quota Exceeded. Safely falling back to physics heuristic.");
+    } else {
+      console.error("[Schedule] Gemini error (falling back to heuristic):", errorMsg);
+    }
 
     const probs = Array.isArray(hourlyProbs) ? hourlyProbs : [];
     const temps = Array.isArray(hourlyTemps) ? hourlyTemps : [];
@@ -254,6 +260,80 @@ app.post("/api/schedule", async (req, res) => {
       reasoning: "Heuristic forecast: optimal combination of warmth and low rain probability.",
       summary: `Hanging clothes in ${bestStartHour} hours provides the safest window with ${confidence}% confidence.`
     });
+  }
+});
+
+// AI Spoken Voice Assistant & Intent Handler Step
+app.post("/api/voice-command", async (req, res) => {
+  const { command, temp, humidity, windSpeed, isDrying, timeLeftMinutes, hasRainAlert } = req.body;
+
+  try {
+    const prompt = `
+      You are standard LAUNDRY_COGNITIVE_ASSISTANT_AI.
+      You process spoken human voice transcriptions captured by a microphone and execute dry-safety actions.
+
+      INPUTS:
+      - Raw Voice Command: "${command}"
+      - Ambient Outdoor Temp: ${temp ?? 20}°C, Relative Humidity: ${humidity ?? 50}%, Wind Velocity: ${windSpeed ?? 5} km/h
+      - Is Laundry Currently Hanging Outside: ${isDrying ? "YES" : "NO"}
+      - Imminent Rain Threat/Alert Active: ${hasRainAlert ? "YES" : "NO"}
+      - Current Remaining Minutes on Tracker: ${timeLeftMinutes ?? 0}m
+
+      DETERMINE ACTION & FORMULATE NATURAL CONVERSATIONAL SPEECH RESPONSE:
+      
+      Choose one of the following ACTIONS:
+      1. 'START_DRYING': If the user spoke about starting laundry, hanging, begin drying, drying start, or placing clothes out.
+      2. 'STOP_DRYING': If the user spoke about collecting laundry, finishing, taking down, bringing in, or done.
+      3. 'MUTE_ALARM': If the user says stop alarm, silence, mute, shut up, or stop beeping.
+      4. 'ADJUST_TIMER': If the user asks to add, increase, decrease, or subtract time (e.g. "add 20 minutes", "subtract 10 minutes").
+      5. 'ANSWER_ONLY': For meteorological forecasts, questions, advice ("will it rain?", "is it ready?", "what's the weather?").
+
+      If ADJUST_TIMER:
+      - Read the number of minutes they want to add or subtract and put it in 'adjustMinutes' (positive number for add/increase, negative number for subtract/decrease).
+
+      RESPONSE GUIDELINES:
+      - responseSpeech: A short, friendly, cheerful vocal phrase (max 120 characters, cheerful tone, no markdown, no emojis, perfectly clean for TTS).
+      - responseHtml: Beautiful short styled HTML text (can use tailwind classes or simple bold tags) to keep in the conversational view on screen.
+
+      Return ONLY a JSON block with these keys: "action", "adjustMinutes", "responseSpeech", "responseHtml".
+    `;
+
+    const result = await ai.models.generateContent({
+      model: "gemini-3.5-flash",
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      config: {
+        responseMimeType: "application/json",
+      }
+    });
+
+    const parsed = JSON.parse(result.text || "{}");
+    res.json(parsed);
+  } catch (error: any) {
+    const errorMsg = error.message || String(error);
+    console.warn("[Voice Command] Gemini error (falling back to heuristic):", errorMsg);
+
+    // Heuristic parsing on error / fallback
+    const cmd = (command || "").toLowerCase();
+    let action = "ANSWER_ONLY";
+    let adjustMinutes = 0;
+    let responseSpeech = "Processed voice command offline.";
+    let responseHtml = "Processed command locally.";
+
+    if (cmd.includes("hang") || cmd.includes("start") || cmd.includes("dry") || cmd.includes("begin") || cmd.includes("put out")) {
+      action = "START_DRYING";
+      responseSpeech = "Starting the laundry timer now.";
+      responseHtml = "<b>Action:</b> Start Laundry Timer";
+    } else if (cmd.includes("finish") || cmd.includes("stop") || cmd.includes("collect") || cmd.includes("remove") || cmd.includes("bring") || cmd.includes("take down") || cmd.includes("done")) {
+      action = "STOP_DRYING";
+      responseSpeech = "Stopping laundry. Clothes are safe!";
+      responseHtml = "<b>Action:</b> Stop Laundry Timer";
+    } else if (cmd.includes("mute") || cmd.includes("silence") || cmd.includes("stop alarm") || cmd.includes("turn off alarm") || cmd.includes("stop sound")) {
+      action = "MUTE_ALARM";
+      responseSpeech = "Alarm silenced.";
+      responseHtml = "<b>Action:</b> Muted Alarm";
+    }
+
+    res.json({ action, adjustMinutes, responseSpeech, responseHtml });
   }
 });
 
