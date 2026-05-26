@@ -183,6 +183,8 @@ export default function App() {
   const [aiProcessing, setAiProcessing] = useState(false);
   const [aiFeed, setAiFeed] = useState<Array<{ speaker: 'user' | 'ai'; text: string; time: string }>>([]);
   const [textCommand, setTextCommand] = useState("");
+  const [customTimerDuration, setCustomTimerDuration] = useState<number | null>(null);
+  const [pendingTimerDuration, setPendingTimerDuration] = useState<number | null>(null);
   const [isLocating, setIsLocating] = useState(true);
   const [isLiveLocation, setIsLiveLocation] = useState(false);
   const [isFetchingWeather, setIsFetchingWeather] = useState(false);
@@ -274,6 +276,8 @@ export default function App() {
         setIsDrying(parsed.drying || false);
         setStartTime(parsed.start || null);
         setCustomMinutesOffset(parsed.customMinutesOffset || 0);
+        setCustomTimerDuration(parsed.customTimerDuration !== undefined ? parsed.customTimerDuration : null);
+        setPendingTimerDuration(parsed.pendingTimerDuration !== undefined ? parsed.pendingTimerDuration : null);
         if (parsed.lastLat && parsed.lastLon) {
           setCoords({ lat: parsed.lastLat, lon: parsed.lastLon });
           setLocationName(parsed.lastName || "Saved Location");
@@ -295,13 +299,15 @@ export default function App() {
         drying: isDrying,
         start: startTime,
         customMinutesOffset,
+        customTimerDuration,
+        pendingTimerDuration,
         lastLat: coords.lat,
         lastLon: coords.lon,
         lastName: locationName,
         settings: appSettings
       }));
     }
-  }, [isDrying, startTime, customMinutesOffset, coords, locationName, appSettings]);
+  }, [isDrying, startTime, customMinutesOffset, customTimerDuration, pendingTimerDuration, coords, locationName, appSettings]);
 
   const getLocation = useCallback(() => {
     // Clear previous watch if exists
@@ -504,11 +510,15 @@ export default function App() {
       setIsDrying(true);
       setStartTime(Date.now());
       setCustomMinutesOffset(0);
+      setCustomTimerDuration(null);
+      setPendingTimerDuration(null);
       setAlarmMuted(false);
     } else {
       setIsDrying(false);
       setStartTime(null);
       setCustomMinutesOffset(0);
+      setCustomTimerDuration(null);
+      setPendingTimerDuration(null);
       setAlarmMuted(false);
     }
   };
@@ -589,10 +599,14 @@ export default function App() {
     setAiProcessing(true);
     setAiFeed(prev => [...prev, { speaker: 'user', text, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
     
-    const totalMinutes = dryness?.estimatedMinutes || 180;
+    const baseMinutes = customTimerDuration !== null ? customTimerDuration : (dryness?.estimatedMinutes || 180);
     const elapsedSeconds = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
-    const timeLeft = Math.max(0, totalMinutes + customMinutesOffset - Math.floor(elapsedSeconds / 60));
+    const timeLeft = Math.max(0, baseMinutes + customMinutesOffset - Math.floor(elapsedSeconds / 60));
     const hasRainAlarm = getRainAlert()?.level === 'danger';
+
+    // Pack hourly arrays to pass forecast data for exact weather checks
+    const hourlyPrecip = weather?.hourly?.precipitation || [];
+    const hourlyProbs = weather?.hourly?.precipitation_probability || [];
 
     sendVoiceCommand({
       command: text,
@@ -601,7 +615,11 @@ export default function App() {
       windSpeed: weather?.current?.wind_speed_10m ?? 0,
       isDrying,
       timeLeftMinutes: timeLeft,
-      hasRainAlert: hasRainAlarm
+      hasRainAlert: hasRainAlarm,
+      hourlyPrecip,
+      hourlyProbs,
+      rainThreshold: appSettings.rainThreshold,
+      pendingTimerDuration: pendingTimerDuration
     }).then((res) => {
       setAiProcessing(false);
       setAiFeed(prev => [...prev, { speaker: 'ai', text: res.responseSpeech, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
@@ -611,10 +629,23 @@ export default function App() {
         setStartTime(Date.now());
         setCustomMinutesOffset(0);
         setAlarmMuted(false);
+        setPendingTimerDuration(null);
+        if (typeof res.customDuration === 'number') {
+          setCustomTimerDuration(res.customDuration);
+        } else {
+          setCustomTimerDuration(null);
+        }
+      } else if (res.action === 'PROMPT_CONFIRMATION') {
+        setPendingTimerDuration(typeof res.customDuration === 'number' ? res.customDuration : 120);
+      } else if (res.action === 'CANCEL_CONFIRMATION') {
+        setPendingTimerDuration(null);
+        setCustomTimerDuration(null);
       } else if (res.action === 'STOP_DRYING') {
         setIsDrying(false);
         setStartTime(null);
         setCustomMinutesOffset(0);
+        setCustomTimerDuration(null);
+        setPendingTimerDuration(null);
       } else if (res.action === 'MUTE_ALARM') {
         setAlarmMuted(true);
         setAlarmActive(false);
@@ -1041,7 +1072,8 @@ export default function App() {
             <div className="flex-1 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/50 rounded-2xl p-5 flex flex-col justify-center">
               {isDrying ? (
                 (() => {
-                  const totalMinutes = (dryness?.estimatedMinutes || 180) + customMinutesOffset;
+                  const baseMinutes = customTimerDuration !== null ? customTimerDuration : (dryness?.estimatedMinutes || 180);
+                  const totalMinutes = baseMinutes + customMinutesOffset;
                   const totalSecondsRequired = totalMinutes * 60;
                   const elapsedSeconds = startTime ? Math.floor((nowTicker - startTime) / 1000) : 0;
                   const secondsRemaining = Math.max(0, totalSecondsRequired - elapsedSeconds);

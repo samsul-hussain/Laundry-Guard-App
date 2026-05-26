@@ -274,8 +274,9 @@ export async function getDrynessEstimate(
 }
 
 export interface VoiceCommandResult {
-  action: "START_DRYING" | "STOP_DRYING" | "MUTE_ALARM" | "ADJUST_TIMER" | "ANSWER_ONLY";
+  action: "START_DRYING" | "STOP_DRYING" | "MUTE_ALARM" | "ADJUST_TIMER" | "ANSWER_ONLY" | "PROMPT_CONFIRMATION" | "CANCEL_CONFIRMATION";
   adjustMinutes: number;
+  customDuration?: number | null;
   responseSpeech: string;
   responseHtml: string;
 }
@@ -288,18 +289,107 @@ export async function sendVoiceCommand(params: {
   isDrying: boolean;
   timeLeftMinutes: number;
   hasRainAlert: boolean;
+  hourlyPrecip?: number[];
+  hourlyProbs?: number[];
+  rainThreshold?: number;
+  pendingTimerDuration?: number | null;
 }): Promise<VoiceCommandResult> {
   const runLocalFallback = (): VoiceCommandResult => {
     const cmd = params.command.toLowerCase();
     
-    if (cmd.includes("hang") || cmd.includes("start") || cmd.includes("dry") || cmd.includes("begin") || cmd.includes("put out")) {
+    // Parse possible duration
+    let parsedMinutes = 120;
+    const matchesMin = cmd.match(/(\d+)\s*(?:minute|min)/);
+    if (matchesMin) {
+      parsedMinutes = parseInt(matchesMin[1], 10);
+    } else if (cmd.includes("1 hour") || cmd.includes("one hour") || cmd.includes("60 minute")) {
+      parsedMinutes = 60;
+    } else if (cmd.includes("1.5 hour") || cmd.includes("90 minute")) {
+      parsedMinutes = 90;
+    } else if (cmd.includes("2 hour") || cmd.includes("two hour") || cmd.includes("120 minute")) {
+      parsedMinutes = 120;
+    }
+
+    const commandWantsTimer = cmd.includes("hang") || cmd.includes("start") || cmd.includes("dry") || cmd.includes("begin") || cmd.includes("timer");
+    const commandWantsWeatherCheck = cmd.includes("rain") || cmd.includes("weather") || cmd.includes("sky") || cmd.includes("forecast") || cmd.includes("outside");
+
+    // Live Rain Pre-processing in local fallback
+    const thresh = params.rainThreshold ?? 30;
+    const probs = params.hourlyProbs ?? [];
+    const precips = params.hourlyPrecip ?? [];
+    
+    let rainSoon = false;
+    let rainSoonMinutesOffset = -1;
+    for (let i = 0; i < Math.min(4, probs.length, precips.length); i++) {
+      if ((precips[i] ?? 0) > 0.1 || (probs[i] ?? 0) >= thresh) {
+        rainSoon = true;
+        if (rainSoonMinutesOffset === -1) rainSoonMinutesOffset = i * 60;
+      }
+    }
+    const isRainingNow = params.hasRainAlert || (precips.length > 0 && (precips[0] ?? 0) > 0.1);
+    const isWeatherUnsafe = isRainingNow || rainSoon;
+    const rainEtaText = isRainingNow ? "Raining right now" : rainSoonMinutesOffset >= 0 ? `Rain in ${rainSoonMinutesOffset}m` : "No rain predicted in 3h";
+
+    if (params.pendingTimerDuration) {
+      if (cmd.includes("yes") || cmd.includes("sure") || cmd.includes("confirm") || cmd.includes("do it") || cmd.includes("anyway")) {
+        return {
+          action: "START_DRYING",
+          adjustMinutes: 0,
+          customDuration: params.pendingTimerDuration,
+          responseSpeech: "Understood. Starting the timer anyway. Keep an eye out for alerts!",
+          responseHtml: "<b>Action Executed:</b> Started timer anyway upon user confirmation."
+        };
+      } else {
+        return {
+          action: "CANCEL_CONFIRMATION",
+          adjustMinutes: 0,
+          customDuration: null,
+          responseSpeech: "Alright, cancelled. Keeping the laundry timer inactive. Better to stay safe!",
+          responseHtml: "<b>Action:</b> Cancelled timer start."
+        };
+      }
+    }
+
+    if (commandWantsTimer && isWeatherUnsafe) {
+      return {
+        action: "PROMPT_CONFIRMATION",
+        adjustMinutes: 0,
+        customDuration: parsedMinutes,
+        responseSpeech: `It looks like it might rain soon (${rainEtaText}). Do you still want me to start the ${parsedMinutes} minutes timer anyway?`,
+        responseHtml: `<div class='text-amber-500 font-bold'>⚠️ Warning: Rain expected.</div> Do you still want to start the ${parsedMinutes}m timer anyway?`
+      };
+    }
+
+    if (commandWantsWeatherCheck && isWeatherUnsafe) {
+      return {
+        action: "ANSWER_ONLY",
+        adjustMinutes: 0,
+        customDuration: null,
+        responseSpeech: `I wouldn't recommend it. Rain is expected in your area soon (${rainEtaText}). Better to dry them indoors today!`,
+        responseHtml: "<span class='text-rose-500 font-bold'>⚠️ Rain expected soon!</span> Better to dry clothes indoors."
+      };
+    }
+
+    if (commandWantsWeatherCheck && !isWeatherUnsafe) {
       return {
         action: "START_DRYING",
         adjustMinutes: 0,
-        responseSpeech: "Starting the laundry drying timer now. Keep an eye out for updates!",
-        responseHtml: "<b>Action Executed:</b> Started drying timer."
+        customDuration: 120,
+        responseSpeech: "The weather looks clear for the next few hours! You're good to hang your laundry.",
+        responseHtml: "<b>Action Executed:</b> Automatically started default 2-hour timer."
       };
     }
+
+    if (commandWantsTimer && !isWeatherUnsafe) {
+      return {
+        action: "START_DRYING",
+        adjustMinutes: 0,
+        customDuration: parsedMinutes,
+        responseSpeech: `The weather looks perfectly safe! Starting your drying timer for ${parsedMinutes} minutes now.`,
+        responseHtml: `<b>Action Executed:</b> Started ${parsedMinutes} minutes timer.`
+      };
+    }
+
     if (cmd.includes("finish") || cmd.includes("stop") || cmd.includes("collect") || cmd.includes("remove") || cmd.includes("bring") || cmd.includes("take down") || cmd.includes("done")) {
       return {
         action: "STOP_DRYING",
@@ -308,11 +398,12 @@ export async function sendVoiceCommand(params: {
         responseHtml: "<b>Action Executed:</b> Stopped drying timer."
       };
     }
+
     if (cmd.includes("mute") || cmd.includes("silence") || cmd.includes("stop alarm") || cmd.includes("turn off alarm") || cmd.includes("stop sound")) {
       return {
         action: "MUTE_ALARM",
         adjustMinutes: 0,
-        responseSpeech: "ALARM muted.",
+        responseSpeech: "Alarm silenced.",
         responseHtml: "<b>Action Executed:</b> Silenced active rain alarm."
       };
     }
@@ -342,17 +433,11 @@ export async function sendVoiceCommand(params: {
 
     // Default conversational answer
     let text = "I am ready. Tell me to 'hang laundry', 'finish laundry', 'add 10 minutes', or ask about weather.";
-    if (cmd.includes("rain") || cmd.includes("forecast") || cmd.includes("weather")) {
-      if (params.hasRainAlert) {
-        text = "Warning! Our meteorological sensors detect potential rain imminent. Consider bringing in your clothes immediately.";
-      } else {
-        text = `The local atmosphere has a temperature of ${params.temp}°C and ${params.humidity}% humidity. It is clear for now, making it suitable for drying clothes outdoors.`;
-      }
-    }
     
     return {
       action: "ANSWER_ONLY",
       adjustMinutes: 0,
+      customDuration: null,
       responseSpeech: text,
       responseHtml: `<div>${text}</div>`
     };
