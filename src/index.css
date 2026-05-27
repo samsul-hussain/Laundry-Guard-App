@@ -18,3 +18,31 @@ body {
 .card-glass {
   @apply bg-white/80 backdrop-blur-md border border-white/20 shadow-sm rounded-2xl;
 }
+
+@keyframes alarm-strobe {
+  0%, 100% {
+    background-color: #ef4444; /* bright danger red */
+    color: #ffffff;
+  }
+  33% {
+    background-color: #ffffff; /* bright white screen glare */
+    color: #1e293b;
+  }
+  66% {
+    background-color: #eab308; /* bright alert yellow glare */
+    color: #000000;
+  }
+}
+
+.animate-strobe-alert {
+  animation: alarm-strobe 0.8s infinite;
+}
+
+/* Custom progress transition styles */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

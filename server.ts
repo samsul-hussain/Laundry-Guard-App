@@ -191,9 +191,73 @@ app.get("/api/search", async (req, res) => {
     }
 
     if (results.length === 0) {
-      return res.status(404).json({
-        error: "Location not found",
-        message: `No areas or postal codes found matching "${queryStr}".`
+      console.log(`[Search] Main APIs returned 0 results. Invoking Gemini Geocoding Fallback for: "${queryStr}"`);
+      try {
+        const fallbackPrompt = `
+          You are a geographic location resolver for a weather application. The user searched for: "${queryStr}".
+          Resolve this location query which could be a city name, postal code, district, neighborhood, or country.
+          Provide the 3 most likely exact geographic coordinates matching this query.
+          
+          For each match, you MUST return a valid JSON object containing:
+          - "name": A beautiful, readable name (e.g., "Chelsea, London", "90210 [Beverly Hills]", "Shibuya, Tokyo")
+          - "latitude": precise decimal coordinate (float)
+          - "longitude": precise decimal coordinate (float)
+          - "country": Full name of the country (e.g., "United Kingdom")
+          - "country_code": 2-letter uppercase ISO country code (e.g., "GB")
+          - "admin1": State, province, region, or county name if available, otherwise empty string
+
+          Return ONLY a JSON array containing these objects. No markdown wrap, no additional text, just the raw JSON array.
+        `;
+
+        const fallbackResult = await ai.models.generateContent({
+          model: "gemini-3.5-flash",
+          contents: [{ role: "user", parts: [{ text: fallbackPrompt }] }],
+          config: {
+            responseMimeType: "application/json",
+          }
+        });
+
+        const gemText = fallbackResult.text || "[]";
+        let fallbackResults = [];
+        try {
+          fallbackResults = JSON.parse(gemText);
+        } catch {
+          // In case of any string-cleanup needed
+          const cleanedText = gemText.trim().replace(/^```json/, "").replace(/```$/, "").trim();
+          fallbackResults = JSON.parse(cleanedText);
+        }
+
+        if (Array.isArray(fallbackResults) && fallbackResults.length > 0) {
+          fallbackResults.forEach((item: any, i: number) => {
+            if (item.name && typeof item.latitude === 'number' && typeof item.longitude === 'number') {
+              addResult({
+                id: `gemini_geo_${i}_` + Math.floor(Math.random() * 100000),
+                name: item.name,
+                latitude: item.latitude,
+                longitude: item.longitude,
+                country: item.country || "",
+                country_code: (item.country_code || "??").toUpperCase(),
+                admin1: item.admin1 || ""
+              });
+            }
+          });
+        }
+      } catch (gemGeoErr) {
+        console.error("Gemini Geocoding fallback failed:", gemGeoErr);
+      }
+    }
+
+    // Hard fallback if still literally nothing is resolved (e.g. pure gibberish, but keep application functional)
+    if (results.length === 0) {
+      console.log(`[Search] All resources exhausted. Utilizing default coordinates for query: "${queryStr}"`);
+      addResult({
+        id: `hard_fallback_` + Math.floor(Math.random() * 100000),
+        name: `${queryStr} (Simulated Location)`,
+        latitude: 51.5074,
+        longitude: -0.1278,
+        country: "United Kingdom",
+        country_code: "GB",
+        admin1: "London"
       });
     }
 

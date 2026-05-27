@@ -481,6 +481,50 @@ export default function App() {
   const customAudioRef = useRef<HTMLAudioElement | null>(null);
   const [emailLogsList, setEmailLogsList] = useState<any[]>([]);
 
+  // Screen Wake Lock controller to prevent device sleeping
+  const wakeLockRef = useRef<any>(null);
+
+  useEffect(() => {
+    async function requestWakeLock() {
+      if ('wakeLock' in navigator) {
+        try {
+          // Release previous lock if any
+          if (wakeLockRef.current) {
+            await wakeLockRef.current.release();
+            wakeLockRef.current = null;
+          }
+          wakeLockRef.current = await (navigator as any).wakeLock.request('screen');
+          console.log("🔒 [Wake Lock] System Screen Lock activated successfully.");
+        } catch (err) {
+          console.warn("Screen Wake Lock request blocked has failed:", err);
+        }
+      }
+    }
+
+    async function releaseWakeLock() {
+      if (wakeLockRef.current) {
+        try {
+          await wakeLockRef.current.release();
+        } catch (e) {
+          console.warn(e);
+        }
+        wakeLockRef.current = null;
+        console.log("🔓 [Wake Lock] System Screen Lock released successfully.");
+      }
+    }
+
+    // Keep screen awake while actively drying OR when alarm is ringing
+    if (isDrying || (alarmActive && !alarmMuted)) {
+      requestWakeLock();
+    } else {
+      releaseWakeLock();
+    }
+
+    return () => {
+      releaseWakeLock();
+    };
+  }, [isDrying, alarmActive, alarmMuted]);
+
   // Premium Custom Fabric Type
   const [fabricType, setFabricType] = useState<'cotton' | 'delicate' | 'heavy'>(() => {
     return (localStorage.getItem("laundry_fabric_type") as any) || "cotton";
@@ -594,6 +638,71 @@ export default function App() {
   const [trackedPostal, setTrackedPostal] = useState<string>(() => {
     return localStorage.getItem("laundry_tracked_postal_code") || "";
   });
+
+  // Unique Search History State
+  const [searchHistory, setSearchHistory] = useState<LocationResult[]>(() => {
+    try {
+      const saved = localStorage.getItem('laundry_search_history');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  const saveToHistory = (loc: LocationResult) => {
+    setSearchHistory((prev) => {
+      const filtered = prev.filter(item => item.name !== loc.name);
+      const updated = [loc, ...filtered].slice(0, 8);
+      try {
+        localStorage.setItem('laundry_search_history', JSON.stringify(updated));
+      } catch (e) {
+        console.warn(e);
+      }
+      return updated;
+    });
+  };
+
+  const clearHistory = () => {
+    setSearchHistory([]);
+    try {
+      localStorage.removeItem('laundry_search_history');
+    } catch (e) {
+      console.warn(e);
+    }
+  };
+
+  // Inline/Hero Suggestions States
+  const [inlineSuggestions, setInlineSuggestions] = useState<LocationResult[]>([]);
+  const [isInlineSearching, setIsInlineSearching] = useState(false);
+  const [inlineSearchFocused, setInlineSearchFocused] = useState(false);
+  const inlineSearchTimeout = useRef<NodeJS.Timeout | null>(null);
+
+  // Implement automatic suggestions from search for the inline tracker input
+  useEffect(() => {
+    if (postalCodeQuery.trim().length < 1) {
+      setInlineSuggestions([]);
+      return;
+    }
+
+    if (inlineSearchTimeout.current) clearTimeout(inlineSearchTimeout.current);
+
+    inlineSearchTimeout.current = setTimeout(async () => {
+      setIsInlineSearching(true);
+      try {
+        const results = await searchLocation(postalCodeQuery);
+        setInlineSuggestions(results);
+      } catch (e) {
+        console.error("Inline location suggestion failed:", e);
+        setInlineSuggestions([]);
+      } finally {
+        setIsInlineSearching(false);
+      }
+    }, 180);
+
+    return () => {
+      if (inlineSearchTimeout.current) clearTimeout(inlineSearchTimeout.current);
+    };
+  }, [postalCodeQuery]);
 
   const handlePostalCodeSubmit = async (queryStr: string) => {
     if (!queryStr.trim()) return;
@@ -805,6 +914,36 @@ export default function App() {
   }, []);
 
   const theme = getTheme(weather);
+
+  // Custom adaptive layout configuration for AI Drying Assist Card Theme
+  const weatherCode = weather ? weather.current.weather_code : 999;
+  const isDay = weather ? weather.current.is_day === 1 : true;
+  
+  // Sunny day theme: code <= 1 and isDay
+  const isSunnyDayTheme = weather && weatherCode <= 1 && isDay;
+  
+  // Rainy day theme: code in fog/drizzle/rain/storm, and isDay
+  const isRainyDayTheme = weather && (((weatherCode >= 51 && weatherCode <= 69) || (weatherCode >= 80 && weatherCode <= 82)) || (weatherCode >= 95 && weatherCode <= 99)) && isDay;
+
+  // Compute adaptive dark-mode card parameters for AI Drying Assist section
+  let aiCardClass = theme.card;
+  let aiCardIsDark = theme.isDark || false;
+  let aiHeaderClass = theme.header;
+  let aiBubbleAiBg = "bg-white dark:bg-slate-800 text-slate-800 border border-slate-200 dark:border-slate-700";
+
+  if (isSunnyDayTheme) {
+    // Rich warming golden-charcoal dark theme
+    aiCardClass = "bg-[#161208]/95 border-[#3b2d13] shadow-2xl text-amber-100 shadow-[#161208]/40";
+    aiCardIsDark = true;
+    aiHeaderClass = "text-amber-100";
+    aiBubbleAiBg = "bg-[#221b0d] hover:bg-[#2b2210] text-[#fbf7f0] border border-[#4d3b19]/40 shadow-sm";
+  } else if (isRainyDayTheme) {
+    // Elegant deep storm-cyan/navy dark theme
+    aiCardClass = "bg-[#0c1324]/95 border-[#1b2d4f] shadow-2xl text-sky-100 shadow-[#0c1324]/50";
+    aiCardIsDark = true;
+    aiHeaderClass = "text-[#e0edff]";
+    aiBubbleAiBg = "bg-[#14203a] hover:bg-[#1a2a4b] text-[#f0f4fb] border border-[#233a65]/40 shadow-sm";
+  }
 
   // Synchronize document.documentElement and body styles for bulletproof dark-theme utility resolution
   useEffect(() => {
@@ -1020,7 +1159,7 @@ export default function App() {
 
   // Handle Search
   useEffect(() => {
-    if (searchQuery.length < 2) {
+    if (searchQuery.trim().length < 1) {
       setSearchResults([]);
       return;
     }
@@ -1040,7 +1179,7 @@ export default function App() {
       } finally {
         setIsSearching(false);
       }
-    }, 400);
+    }, 180);
 
     return () => {
       if (searchTimeout.current) clearTimeout(searchTimeout.current);
@@ -1048,6 +1187,7 @@ export default function App() {
   }, [searchQuery]);
 
   const handleSelectLocation = (loc: LocationResult) => {
+    saveToHistory(loc);
     setCoords({ lat: loc.latitude, lon: loc.longitude });
     setLocationName(`${loc.name}, ${loc.country}`);
     setIsLiveLocation(false);
@@ -1130,14 +1270,44 @@ export default function App() {
     }
   }, [isDrying]);
 
-  // Rain danger email dispatcher & Vocalizer Warning
+  // Rain danger email dispatcher, Push Notification & Vocalizer Warning
   useEffect(() => {
     const isDangerousRain = getRainAlert()?.level === 'danger';
-    if (isDrying && isDangerousRain && !hasSentRainAlertEmail.current) {
+    if ((isDrying || isDryingComplete) && isDangerousRain && !hasSentRainAlertEmail.current) {
       hasSentRainAlertEmail.current = true;
 
       // Vocal Warning Announcement
       playWithCustomVoice("⚠️ Urgent Warning! Rain detected in your drying zone. Please collect your laundry immediately!");
+
+      // Native Browser System-level Notification (goes to mobile notification bar)
+      if ('Notification' in window) {
+        if (Notification.permission === 'granted') {
+          try {
+            new Notification("🌧️ URGENT: Sudden Rain Alert!", {
+              body: `Precipitation detected in ${locationName || 'your yard'}. Bring your clothes indoors immediately!`,
+              icon: "https://cdn-icons-png.flaticon.com/512/1163/1163624.png",
+              tag: "laundry-rain-alert-instant",
+              requireInteraction: true
+            });
+          } catch (ne) {
+            console.warn("Notification error:", ne);
+          }
+        } else if (Notification.permission !== 'denied') {
+          Notification.requestPermission().then(perm => {
+            if (perm === 'granted') {
+              try {
+                new Notification("🌧️ URGENT: Sudden Rain Alert!", {
+                  body: `Precipitation detected. Collect your clothes immediately!`,
+                  icon: "https://cdn-icons-png.flaticon.com/512/1163/1163624.png",
+                  tag: "laundry-rain-alert-instant"
+                });
+              } catch (ne) {
+                console.warn(ne);
+              }
+            }
+          });
+        }
+      }
 
       // Trigger email alert
       if (appSettings.emailNotifications && appSettings.emailAddress) {
@@ -1167,7 +1337,7 @@ export default function App() {
         });
       }
     }
-  }, [isDrying, weather, appSettings, locationName, syncEmailLogs, playWithCustomVoice]);
+  }, [isDrying, isDryingComplete, weather, appSettings, locationName, syncEmailLogs, playWithCustomVoice]);
 
   // Automated timer finish checker (Drying Complete Alarm and Email Dispatcher)
   useEffect(() => {
@@ -1244,7 +1414,7 @@ export default function App() {
   // Web Audio chime model with selected Alarm Ringtone and device file player
   useEffect(() => {
     const isDangerousRain = getRainAlert()?.level === 'danger';
-    const isRainAlertTriggered = isDrying && isDangerousRain;
+    const isRainAlertTriggered = (isDrying || isDryingComplete) && isDangerousRain;
     const isCompleteAlertTriggered = completeAlarmActive;
 
     const startSoundEngine = () => {
@@ -1374,7 +1544,7 @@ export default function App() {
     return () => {
       stopSoundEngine();
     };
-  }, [isDrying, weather, alarmMuted, completeAlarmActive, alarmRingtone, customFileAudioUrl]);
+  }, [isDrying, isDryingComplete, weather, alarmMuted, completeAlarmActive, alarmRingtone, customFileAudioUrl]);
 
   // Task 4: Auto-refresh weather (precip + hourly) every 5 minutes automatically
   useEffect(() => {
@@ -1640,6 +1810,53 @@ export default function App() {
 
   return (
     <div className={`max-w-md mx-auto min-h-screen ${theme.bg} ${theme.isDark ? 'dark' : ''} relative pb-28 transition-colors duration-1000 overflow-x-hidden`}>
+      {/* Dynamic Strobe Screen Light Warning for Sudden Rain alarm and Wake state */}
+      {alarmActive && !alarmMuted && (
+        <div 
+          onClick={() => {
+            setAlarmMuted(true);
+            setCompleteAlarmActive(false);
+            setIsDryingComplete(false);
+          }}
+          className="fixed inset-0 z-[9999] animate-strobe-alert flex flex-col items-center justify-center p-6 text-center select-none cursor-pointer"
+        >
+          <div className="absolute top-4 right-4 bg-black/80 text-white rounded-full px-3 py-1 text-[10px] uppercase tracking-wider font-extrabold flex items-center gap-1.5 backdrop-blur-md">
+            <span>💡</span> Screen Stays Lit & Awake
+          </div>
+          <div 
+            onClick={(e) => e.stopPropagation()}
+            className="max-w-xs bg-black/95 text-white p-7 rounded-3xl border border-white/20 shadow-2xl backdrop-blur-xl flex flex-col items-center gap-4 cursor-default"
+          >
+            <div className="w-16 h-16 rounded-full bg-rose-500/20 border border-rose-500 flex items-center justify-center animate-bounce text-3xl">
+              🌧️
+            </div>
+            <div>
+              <h2 className="text-xl font-display font-extrabold tracking-tight uppercase text-rose-500 leading-tight">
+                SUDDEN RAIN WARNING!
+              </h2>
+              <p className="text-xs text-slate-300 font-medium leading-relaxed mt-2">
+                Emergency atmospheric change detected! Retrieve your outdoor hanging clothes immediately before they are soaked.
+              </p>
+            </div>
+            
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setAlarmMuted(true);
+                setCompleteAlarmActive(false);
+                setIsDryingComplete(false);
+              }}
+              className="mt-2 w-full py-3 px-4 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs uppercase tracking-wider rounded-2xl transition-all shadow-md active:scale-95 duration-200 cursor-pointer"
+            >
+              🔇 Silence Alarm & Close
+            </button>
+            <span className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">
+              (Or tap anywhere on screen to silence)
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Header */}
       <header className="px-6 pt-12 pb-4 flex justify-between items-start">
         <div className="flex-1">
@@ -1708,7 +1925,7 @@ export default function App() {
         )}
 
         {/* Postal Code Area Tracker Card */}
-        <div className={`p-4 rounded-3xl border shadow-sm transition-all duration-300 ${
+        <div className={`p-4 rounded-3xl border shadow-sm transition-all duration-300 relative ${
           theme.isDark 
             ? 'bg-slate-900/60 border-slate-700/60 shadow-slate-950/20 text-slate-100' 
             : 'bg-white border-slate-100 shadow-slate-100/50 text-slate-800'
@@ -1744,6 +1961,8 @@ export default function App() {
                 type="text"
                 placeholder="Enter postal code (e.g. 90210, SW1A)..."
                 value={postalCodeQuery}
+                onFocus={() => setInlineSearchFocused(true)}
+                onBlur={() => setTimeout(() => setInlineSearchFocused(false), 250)}
                 onChange={(e) => setPostalCodeQuery(e.target.value)}
                 className={`w-full py-2 pl-3 pr-8 rounded-xl text-xs font-semibold outline-none border transition-all ${
                   theme.isDark 
@@ -1776,43 +1995,143 @@ export default function App() {
             </button>
           </form>
 
+          {/* Real-time Inline Dropdown Suggestions / History panel */}
+          {inlineSearchFocused && (
+            <div 
+              className={`absolute left-0 right-0 top-full mt-2 p-3.5 rounded-2xl border shadow-xl z-50 backdrop-blur-xl ${
+                theme.isDark 
+                  ? 'bg-slate-900/95 border-slate-700/80 text-white shadow-slate-950/45' 
+                  : 'bg-white border-slate-155 text-slate-800 shadow-slate-200/60'
+              }`}
+            >
+              {postalCodeQuery.trim() === "" ? (
+                // Show History List in the Hero Card lookup
+                <div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                      <span>🕒</span> Recent Searches
+                    </span>
+                    {searchHistory.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          clearHistory();
+                        }}
+                        className="text-[10px] font-bold text-rose-500 hover:text-rose-600 cursor-pointer"
+                      >
+                        Clear All
+                      </button>
+                    )}
+                  </div>
+                  {searchHistory.length > 0 ? (
+                    <div className="flex flex-col gap-1.5 max-h-[160px] overflow-y-auto no-scrollbar pb-0.5">
+                      {searchHistory.map((loc, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => {
+                            setCoords({ lat: loc.latitude, lon: loc.longitude });
+                            setLocationName(`${loc.name}, ${loc.country}`);
+                            setIsLiveLocation(false);
+                            if (watchId.current !== null) {
+                              navigator.geolocation.clearWatch(watchId.current);
+                              watchId.current = null;
+                            }
+                            setTrackedPostal(loc.name);
+                            localStorage.setItem("laundry_tracked_postal_code", loc.name);
+                            setPostalCodeQuery("");
+                            setInlineSearchFocused(false);
+                          }}
+                          className={`w-full p-2.5 rounded-xl text-left flex items-center justify-between group transition-all text-xs font-bold ${
+                            theme.isDark 
+                              ? 'bg-slate-950/20 hover:bg-indigo-500/10 hover:text-indigo-400 border border-slate-800/10' 
+                              : 'bg-slate-50 hover:bg-blue-50 hover:text-blue-600 border border-slate-100'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 truncate pr-2">
+                            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span className="truncate">{loc.name}, {loc.country}</span>
+                          </div>
+                          <span className="text-[8px] px-1.5 py-0.5 rounded bg-slate-200/50 dark:bg-slate-800 uppercase text-slate-400 font-extrabold shrink-0">
+                            {loc.country_code || '??'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-4 bg-slate-50/20 dark:bg-slate-950/20 rounded-xl border border-dashed border-slate-200/40">
+                      <p className="text-[10px] text-slate-400 font-medium">No recent searches yet.</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                // Show Autocomplete Suggestions List
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
+                      <span>✨</span> Auto-suggestions
+                    </span>
+                    {isInlineSearching && (
+                      <span className="text-[9px] text-blue-500 font-semibold animate-pulse flex items-center gap-1">
+                        <Loader2 className="w-2.5 h-2.5 animate-spin" /> Suggesting...
+                      </span>
+                    )}
+                  </div>
+                  
+                  {inlineSuggestions.length > 0 ? (
+                    <div className="flex flex-col gap-1.5 max-h-[180px] overflow-y-auto no-scrollbar pb-0.5">
+                      {inlineSuggestions.map((loc, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          onClick={() => {
+                            saveToHistory(loc);
+                            setCoords({ lat: loc.latitude, lon: loc.longitude });
+                            setLocationName(`${loc.name}, ${loc.country}`);
+                            setIsLiveLocation(false);
+                            if (watchId.current !== null) {
+                              navigator.geolocation.clearWatch(watchId.current);
+                              watchId.current = null;
+                            }
+                            setTrackedPostal(loc.name);
+                            localStorage.setItem("laundry_tracked_postal_code", loc.name);
+                            setPostalCodeQuery("");
+                            setInlineSearchFocused(false);
+                          }}
+                          className={`w-full p-2.5 rounded-xl text-left flex items-center justify-between group transition-all text-xs font-bold ${
+                            theme.isDark 
+                              ? 'bg-slate-950/20 hover:bg-indigo-500/10 hover:text-indigo-400 border border-slate-800/10' 
+                              : 'bg-slate-50 hover:bg-blue-50 hover:text-blue-600 border border-slate-100'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 truncate pr-2">
+                            <MapPin className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                            <span className="truncate">{loc.name}, {loc.country}</span>
+                          </div>
+                          <span className="text-[8px] px-1.5 py-0.5 rounded bg-slate-200/50 dark:bg-slate-800 uppercase text-slate-400 font-extrabold shrink-0">
+                            {loc.country_code || '??'}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    !isInlineSearching && (
+                      <div className="text-center py-4 bg-slate-50/20 dark:bg-slate-950/20 rounded-xl border border-dashed border-slate-200/40">
+                        <p className="text-[10px] text-slate-400 font-medium">Click "Set" button to lookup "{postalCodeQuery}"</p>
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
           {postalError && (
             <div className="mt-2 text-[10px] text-rose-500 font-semibold flex items-center gap-1">
               <span>⚠️</span> {postalError}
             </div>
           )}
-
-          {/* Inline Postal Search Help Quick Chips */}
-          <div className="mt-3 pt-2.5 border-t border-slate-150/10 flex flex-col gap-1.5">
-            <span className={`text-[9px] font-bold uppercase tracking-wider ${theme.isDark ? 'text-indigo-400/80' : 'text-blue-600/80'}`}>
-              ⚡️ Quick Search Help (Tap to resolve):
-            </span>
-            <div className="flex flex-wrap gap-1">
-              {[
-                { label: "US Zip (90210)", value: "90210" },
-                { label: "UK Post (SW1A)", value: "SW1A" },
-                { label: "AU Post (2000)", value: "2000" },
-                { label: "CA Post (H3B)", value: "H3B" },
-                { label: "FR Postal (75001)", value: "75001" },
-              ].map((chip) => (
-                <button
-                  key={chip.value}
-                  type="button"
-                  onClick={() => {
-                    setPostalCodeQuery(chip.value);
-                    handlePostalCodeSubmit(chip.value);
-                  }}
-                  className={`text-[9px] font-bold px-2 py-1 rounded-lg border transition-all active:scale-95 flex items-center gap-0.5 ${
-                    theme.isDark
-                      ? 'bg-slate-950/30 hover:bg-indigo-500/10 border-slate-800 text-slate-400 hover:text-indigo-300'
-                      : 'bg-slate-50 hover:bg-blue-50 border-slate-200/60 text-slate-600 hover:text-blue-600'
-                  }`}
-                >
-                  📍 {chip.label}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
 
         {/* Connection Failure or No Data */}
@@ -2192,20 +2511,20 @@ export default function App() {
         </section>
 
         {/* Laundry Action Card & AI Voice control panel */}
-        <section className={`${theme.card} p-6 rounded-3xl shadow-sm border transition-all relative overflow-hidden ${
+        <section className={`${aiCardClass} p-6 rounded-3xl shadow-sm border transition-all relative overflow-hidden ${
           alarmActive && !alarmMuted
           ? 'border-rose-500 ring-4 ring-rose-500/20' 
           : isDrying 
-            ? (theme.isDark ? 'border-indigo-500/50 ring-4 ring-indigo-500/10' : 'border-blue-100 ring-4 ring-blue-50/50') 
-            : (theme.isDark ? 'border-slate-700' : 'border-slate-50')
+            ? (aiCardIsDark ? 'border-amber-500/50 ring-4 ring-amber-500/10' : 'border-blue-200 ring-4 ring-blue-50/50') 
+            : (aiCardIsDark ? 'border-white/5' : 'border-slate-100')
         }`}>
           
           {/* Active imminent rain danger indicator */}
           {alarmActive && (
             <div className={`p-4 rounded-2xl mb-5 flex items-center justify-between gap-3 animate-pulse border ${
               alarmMuted 
-                ? 'bg-slate-100 dark:bg-slate-800 text-slate-500 border-slate-200 dark:border-slate-700' 
-                : 'bg-rose-50 dark:bg-rose-950/40 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-800'
+                ? 'bg-slate-100/10 border-white/5 text-slate-300' 
+                : 'bg-rose-500/15 text-rose-200 border-rose-500/30'
             }`}>
               <div className="flex items-center gap-2.5">
                 <AlertCircle className={`w-5 h-5 shrink-0 ${alarmMuted ? '' : 'animate-bounce'}`} />
@@ -2219,8 +2538,8 @@ export default function App() {
                 onClick={() => setAlarmMuted(!alarmMuted)}
                 className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase transition-all shadow-sm border ${
                   alarmMuted 
-                    ? 'bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-200 border-transparent hover:bg-slate-300' 
-                    : 'bg-rose-100 dark:bg-rose-900/60 text-rose-700 dark:text-rose-300 border-rose-200 hover:bg-rose-200'
+                    ? 'bg-white/10 hover:bg-white/15 text-white border-transparent' 
+                    : 'bg-rose-500 hover:bg-rose-600 text-white border-transparent'
                 }`}
               >
                 {alarmMuted ? (
@@ -2240,14 +2559,14 @@ export default function App() {
 
           <div className="flex justify-between items-center mb-6">
             <div>
-              <h3 className={`text-lg font-bold tracking-tight flex items-center gap-2 ${theme.header}`}>
-                <Sparkles className="w-4 h-4 text-blue-500 fill-blue-100 dark:fill-none" /> AI Drying Assist
+              <h3 className={`text-lg font-bold tracking-tight flex items-center gap-2 ${aiHeaderClass}`}>
+                <Sparkles className={`w-4 h-4 ${isSunnyDayTheme ? 'text-amber-400 fill-amber-950/20' : isRainyDayTheme ? 'text-sky-400 fill-sky-950/20' : 'text-blue-500 fill-blue-100'}`} /> AI Drying Assist
               </h3>
               <div className="flex items-center gap-2 mt-1">
                 <button 
                   onClick={handleRefresh}
                   disabled={isFetchingWeather}
-                  className={`text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 transition-colors ${isFetchingWeather ? 'text-blue-500' : 'text-slate-400 hover:text-blue-500'}`}
+                  className={`text-[10px] font-bold uppercase tracking-widest flex items-center gap-1.5 transition-colors ${isFetchingWeather ? 'text-blue-400' : 'text-slate-400 hover:text-blue-400'}`}
                 >
                   <RefreshCw className={`w-3 h-3 ${isFetchingWeather ? 'animate-spin' : ''}`} />
                   {isFetchingWeather ? 'Syncing...' : 'Refresh Now'}
@@ -2257,7 +2576,11 @@ export default function App() {
             
             <button 
               onClick={() => setAppSettings(s => ({ ...s, pushNotifications: !s.pushNotifications }))}
-              className={`p-3 rounded-2xl transition-all ${appSettings.pushNotifications ? (theme.isDark ? 'bg-indigo-500/20 text-indigo-400 shadow-inner' : 'bg-blue-50 text-blue-600 shadow-inner') : (theme.isDark ? 'bg-slate-700 text-slate-500' : 'bg-slate-50 text-slate-300')}`}
+              className={`p-3 rounded-2xl transition-all ${
+                appSettings.pushNotifications 
+                  ? (aiCardIsDark ? 'bg-amber-400/20 text-amber-300' : 'bg-blue-50 text-blue-600 shadow-inner') 
+                  : (aiCardIsDark ? 'bg-white/5 text-slate-500 hover:text-slate-400' : 'bg-slate-50 text-slate-300 hover:text-slate-400')
+              }`}
             >
               <Bell className="w-5 h-5" />
             </button>
@@ -2269,8 +2592,8 @@ export default function App() {
               onClick={toggleDrying}
               className={`flex-1 group relative h-36 rounded-2xl flex flex-col items-center justify-center transition-all duration-300 border-2 ${
                 isDrying 
-                  ? 'bg-rose-50/50 dark:bg-rose-950/10 text-rose-600 dark:text-rose-400 border-rose-200 dark:border-rose-900/50 shadow-sm hover:bg-rose-100/50' 
-                  : (theme.isDark ? 'bg-indigo-500/5 text-indigo-400 border-indigo-500/20 shadow-sm hover:bg-indigo-500/10' : 'bg-blue-50 text-blue-600 border-blue-100 shadow-sm hover:bg-blue-100/50')
+                  ? 'bg-rose-500/10 text-rose-300 border-rose-500/40 hover:bg-rose-500/20' 
+                  : (aiCardIsDark ? 'bg-[#f59e0b]/5 text-[#f59e0b] border-[#f59e0b]/20 hover:bg-[#f59e0b]/10' : 'bg-blue-50 text-blue-600 border-blue-100 hover:bg-blue-100/50')
               }`}
             >
               <AnimatePresence mode="wait">
@@ -2289,7 +2612,7 @@ export default function App() {
             </button>
 
             {/* Countdown timer ticker representation */}
-            <div className="flex-1 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/50 rounded-2xl p-5 flex flex-col justify-center">
+            <div className={`flex-1 ${aiCardIsDark ? 'bg-black/35 border-white/5' : 'bg-slate-50/50 border-slate-100'} border rounded-2xl p-5 flex flex-col justify-center`}>
               {isDrying ? (
                 (() => {
                   let base = customTimerDuration !== null ? customTimerDuration : (dryness?.estimatedMinutes || 180);
@@ -2314,25 +2637,25 @@ export default function App() {
                   return (
                     <div className="space-y-3.5">
                       <div className="flex justify-between items-center">
-                        <div className={`flex items-center gap-1.5 ${theme.isDark ? 'text-slate-400' : 'text-slate-500'}`}>
+                        <div className={`flex items-center gap-1.5 ${aiCardIsDark ? 'text-slate-400' : 'text-slate-500'}`}>
                           <Timer className="w-3.5 h-3.5 text-blue-500" />
                           <span className="text-[10px] font-bold uppercase tracking-wider">Time Remaining</span>
                         </div>
                         {customMinutesOffset !== 0 && (
-                          <span className="text-[9px] bg-blue-100 text-blue-800 dark:bg-blue-905/30 dark:text-blue-300 font-bold px-1.5 py-0.5 rounded-full">
+                          <span className="text-[9px] bg-blue-105 text-blue-800 dark:bg-amber-400/20 dark:text-amber-300 font-bold px-1.5 py-0.5 rounded-full">
                             {customMinutesOffset > 0 ? `+${customMinutesOffset}` : customMinutesOffset}m Adjusted
                           </span>
                         )}
                       </div>
                       
                       <div className="flex items-baseline gap-1">
-                        <span className={`text-4xl font-display font-bold tabular-nums leading-none tracking-tight ${theme.header}`}>
+                        <span className={`text-3xl font-display font-bold tabular-nums leading-none tracking-tight ${aiHeaderClass}`}>
                           {isFinished ? "DRY DONE" : formattedTime}
                         </span>
                       </div>
 
                       {/* Dynamic visual progress block */}
-                      <div className="w-full bg-slate-100 dark:bg-slate-800/80 rounded-full h-2 overflow-hidden border border-slate-200/50 dark:border-slate-700/50">
+                      <div className={`w-full ${aiCardIsDark ? 'bg-white/10 border-white/5' : 'bg-slate-100 border-slate-200/50'} rounded-full h-2 overflow-hidden border`}>
                         <div 
                           className={`h-full rounded-full transition-all duration-1000 ${isFinished ? 'bg-emerald-500' : 'bg-blue-500'}`}
                           style={{ width: `${progressPercent}%` }}
@@ -2343,13 +2666,13 @@ export default function App() {
                       <div className="flex gap-2 items-center">
                         <button
                           onClick={() => setCustomMinutesOffset(c => c - 15)}
-                          className="flex-1 py-1 px-2 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-[10px] font-bold transition-all text-slate-600 dark:text-slate-300 shadow-sm"
+                          className={`flex-1 py-1 px-2 rounded-lg border text-[10px] font-bold transition-all shadow-sm ${aiCardIsDark ? 'bg-white/5 hover:bg-white/10 border-white/5 text-slate-200' : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-600'}`}
                         >
                           -15 Min
                         </button>
                         <button
                           onClick={() => setCustomMinutesOffset(c => c + 15)}
-                          className="flex-1 py-1 px-2 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-[10px] font-bold transition-all text-slate-600 dark:text-slate-300 shadow-sm"
+                          className={`flex-1 py-1 px-2 rounded-lg border text-[10px] font-bold transition-all shadow-sm ${aiCardIsDark ? 'bg-white/5 hover:bg-white/10 border-white/5 text-slate-200' : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-600'}`}
                         >
                           +15 Min
                         </button>
@@ -2359,10 +2682,10 @@ export default function App() {
                 })()
               ) : (
                 <div className="text-center py-4">
-                  <div className="w-10 h-10 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-2 text-slate-400">
+                  <div className={`w-10 h-10 rounded-full ${aiCardIsDark ? 'bg-white/10 text-amber-300/60' : 'bg-slate-100 text-slate-400'} flex items-center justify-center mx-auto mb-2`}>
                     <Timer className="w-5 h-5" />
                   </div>
-                  <div className="font-bold text-xs text-slate-800 dark:text-slate-200">Timer Inactive</div>
+                  <div className={`font-bold text-xs ${aiCardIsDark ? 'text-white' : 'text-slate-800'}`}>Timer Inactive</div>
                   <p className="text-[10px] text-slate-400 mt-1">Start timer when you hang your clothes.</p>
                 </div>
               )}
@@ -2370,12 +2693,12 @@ export default function App() {
           </div>
 
           {/* Custom Fabric Type Coefficient Selector */}
-          <div className="mb-5 p-3.5 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/80 rounded-2xl">
+          <div className={`mb-5 p-3.5 ${aiCardIsDark ? 'bg-black/35 border-white/5' : 'bg-slate-50/50 border-slate-100'} border rounded-2xl`}>
             <div className="flex justify-between items-center mb-2.5">
               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
                 <Shirt className="w-3.5 h-3.5 text-blue-500" /> Fabric Drying Preset Modifier
               </span>
-              <span className="text-[9px] font-bold bg-blue-100 text-blue-800 dark:bg-slate-800 dark:text-blue-300 px-1.5 py-0.5 rounded">
+              <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${aiCardIsDark ? 'bg-white/10 text-amber-300' : 'bg-blue-105 text-blue-800'}`}>
                 Factor Scale
               </span>
             </div>
@@ -2393,8 +2716,8 @@ export default function App() {
                   }}
                   className={`p-2.5 rounded-xl border text-left transition-all ${
                     fabricType === f.id
-                      ? 'bg-blue-50/50 dark:bg-slate-850 border-blue-500 text-blue-600 dark:text-blue-400'
-                      : 'bg-white dark:bg-slate-950/20 border-slate-200/50 dark:border-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-300'
+                      ? (aiCardIsDark ? 'bg-amber-400/20 border-amber-400 text-amber-200' : 'bg-blue-50/50 dark:bg-slate-850 border-blue-505 text-blue-600')
+                      : (aiCardIsDark ? 'bg-white/5 border-white/5 hover:bg-white/10 text-white/95' : 'bg-white border-slate-200/50 hover:bg-slate-50 text-slate-705')
                   }`}
                 >
                   <div className="font-extrabold text-[10px] leading-tight">{f.name}</div>
@@ -2406,12 +2729,12 @@ export default function App() {
           </div>
 
           {/* AI Voice Command Core Panel */}
-          <div className="bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800/50 rounded-2xl p-4">
+          <div className={`${aiCardIsDark ? 'bg-black/35 border-white/5' : 'bg-slate-50 border-slate-100'} border rounded-2xl p-4`}>
             <div className="flex items-center justify-between mb-3 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
               <span className="flex items-center gap-1.5">
                 <Mic className="w-3.5 h-3.5 text-indigo-500" /> Voice Assistant Command
               </span>
-              <span className="text-[9px] bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 font-bold px-1.5 py-0.5 rounded-md">
+              <span className={`text-[9px] ${aiCardIsDark ? 'bg-white/10 text-slate-300' : 'bg-slate-100 text-slate-400'} font-bold px-1.5 py-0.5 rounded-md`}>
                 Active AI
               </span>
             </div>
@@ -2423,7 +2746,7 @@ export default function App() {
                 className={`relative w-12 h-12 rounded-full flex items-center justify-center shrink-0 shadow-sm border transition-all ${
                   aiListening 
                     ? 'bg-rose-500 text-white border-transparent ring-4 ring-rose-500/20' 
-                    : (theme.isDark ? 'bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 border-indigo-500/20' : 'bg-blue-50 hover:bg-blue-100 text-blue-600 border-blue-100')
+                    : (aiCardIsDark ? 'bg-[#f59e0b]/15 hover:bg-[#f59e0b]/25 text-[#f59e0b] border-[#f59e0b]/30' : 'bg-[#e0f2fe]/95 hover:bg-[#bae6fd] text-blue-700 border-blue-200/50')
                 }`}
               >
                 {aiListening ? (
@@ -2446,8 +2769,8 @@ export default function App() {
                     <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" /> AI analyzing command...
                   </p>
                 ) : (
-                  <p className="text-xs text-slate-400 leading-tight">
-                    Click microphone to say: <span className="italic font-medium text-slate-600 dark:text-slate-300">"Hang clothes"</span>, <span className="italic font-medium text-slate-600 dark:text-slate-300">"add 15 minutes"</span>, or <span className="italic font-medium text-slate-600 dark:text-slate-300">"is it gonna rain?"</span>
+                  <p className={`text-xs ${aiCardIsDark ? 'text-slate-300' : 'text-slate-400'} leading-tight`}>
+                    Click microphone to say: <span className={`italic font-bold ${aiCardIsDark ? 'text-amber-200 font-extrabold' : 'text-slate-700'}`}>"Hang clothes"</span>, <span className={`italic font-bold ${aiCardIsDark ? 'text-amber-200 font-extrabold' : 'text-slate-700'}`}>"add 15 minutes"</span>, or <span className={`italic font-bold ${aiCardIsDark ? 'text-amber-200 font-extrabold' : 'text-slate-700'}`}>"is it gonna rain?"</span>
                   </p>
                 )}
               </div>
@@ -2455,13 +2778,13 @@ export default function App() {
 
             {/* Conversation Log Feed Bubble */}
             {aiFeed.length > 0 && (
-              <div className="mt-4 space-y-2 border-t border-slate-100 dark:border-slate-800/80 pt-3 max-h-36 overflow-y-auto pr-1 no-scrollbar text-[11px]">
+              <div className="mt-4 space-y-2 border-t border-white/5 dark:border-slate-800/80 pt-3 max-h-36 overflow-y-auto pr-1 no-scrollbar text-[11px]">
                 {aiFeed.slice(-3).map((item, idx) => (
                   <div key={idx} className={`flex flex-col ${item.speaker === 'user' ? 'items-end' : 'items-start'}`}>
                     <div className={`p-2.5 rounded-2xl max-w-[85%] leading-tight ${
                       item.speaker === 'user' 
-                        ? 'bg-blue-600 text-white rounded-tr-none font-medium' 
-                        : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-tl-none font-normal shadow-sm'
+                        ? 'bg-blue-600 text-white rounded-tr-none font-medium shadow-sm' 
+                        : `${aiBubbleAiBg} rounded-tl-none font-normal shadow-md`
                     }`}>
                       <div dangerouslySetInnerHTML={{ __html: item.text }} />
                     </div>
@@ -2487,7 +2810,7 @@ export default function App() {
                 value={textCommand}
                 onChange={(e) => setTextCommand(e.target.value)}
                 placeholder="Type command manually..."
-                className="flex-1 text-[11px] bg-white dark:bg-slate-800/70 py-1.5 px-3 rounded-xl border border-slate-200 dark:border-slate-700/60 focus:outline-none focus:border-blue-400 text-slate-800 dark:text-slate-200 font-medium"
+                className={`flex-1 text-[11px] ${aiCardIsDark ? 'bg-black/35 border-white/10 text-white focus:border-amber-400' : 'bg-white border-slate-200 focus:border-blue-400 text-slate-850'} py-1.5 px-3 rounded-xl border focus:outline-none font-medium`}
               />
               <button
                 type="submit"

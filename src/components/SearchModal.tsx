@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { X, Search, MapPin, Loader2, Navigation, Globe } from 'lucide-react';
 import { LocationResult } from '../services/api';
@@ -26,6 +26,57 @@ export default function SearchModal({
   setQuery,
   error
 }: SearchModalProps) {
+  const [history, setHistory] = useState<LocationResult[]>(() => {
+    try {
+      const saved = localStorage.getItem('laundry_search_history');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    if (isOpen) {
+      try {
+        const saved = localStorage.getItem('laundry_search_history');
+        if (saved) {
+          setHistory(JSON.parse(saved));
+        } else {
+          setHistory([]);
+        }
+      } catch (e) {
+        console.warn(e);
+      }
+    }
+  }, [isOpen]);
+
+  const saveToHistory = (loc: LocationResult) => {
+    setHistory((prev) => {
+      const filtered = prev.filter(item => item.name !== loc.name);
+      const updated = [loc, ...filtered].slice(0, 8);
+      try {
+        localStorage.setItem('laundry_search_history', JSON.stringify(updated));
+      } catch (e) {
+        console.warn(e);
+      }
+      return updated;
+    });
+  };
+
+  const clearHistory = () => {
+    setHistory([]);
+    try {
+      localStorage.removeItem('laundry_search_history');
+    } catch (e) {
+      console.warn(e);
+    }
+  };
+
+  const handleSelect = (loc: LocationResult) => {
+    saveToHistory(loc);
+    onSelect(loc);
+  };
+
   return (
     <AnimatePresence>
       {isOpen && (
@@ -55,7 +106,7 @@ export default function SearchModal({
               </button>
             </div>
 
-            <div className="relative mb-6">
+            <div className="relative mb-4">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
               <input
                 autoFocus
@@ -73,52 +124,72 @@ export default function SearchModal({
               )}
             </div>
 
-            {/* Advanced Dynamic Search Help Bar / Interactive Guidelines */}
-            <div className="bg-slate-50/70 border border-slate-100/80 rounded-2xl p-4 mb-6">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-2.5">
-                <span className="text-amber-500 animate-pulse">💡</span>
-                <span>Specific Area & Postal Code Search Tips</span>
-              </div>
-              <p className="text-[11px] text-slate-500 font-semibold mb-3 leading-relaxed">
-                Looking for a local drying window? Tap any live postal example below to instantly resolve specific neighborhood ranges & coordinates:
-              </p>
-              <div className="flex flex-wrap gap-1.5" id="search-help-chips">
-                {[
-                  { label: "US Beverly Hills (90210)", value: "90210" },
-                  { label: "UK London (SW1A)", value: "SW1A" },
-                  { label: "AU Sydney (2000)", value: "2000" },
-                  { label: "CA Montreal (H3B)", value: "H3B" },
-                  { label: "FR Paris (75001)", value: "75001" },
-                  { label: "JP Shibuya", value: "Shibuya" },
-                  { label: "DE Berlin", value: "Berlin" },
-                ].map((chip) => (
-                  <button
-                    key={chip.value}
-                    type="button"
-                    onClick={() => setQuery(chip.value)}
-                    className="text-[10px] font-bold px-2.5 py-1.5 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-600 border border-slate-200/80 hover:border-blue-200 rounded-xl transition-all shadow-sm flex items-center gap-1 active:scale-95"
-                  >
-                    <span>📍</span> {chip.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
+            {/* Use Current GPS Location Button */}
             <button
               onClick={() => {
                 onUseLiveLocation();
                 onClose();
               }}
-              className="w-full bg-blue-50 text-blue-600 font-bold py-4 rounded-2xl border border-blue-100 mb-6 flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors active:scale-95"
+              className="w-full bg-blue-50 text-blue-600 font-bold py-3.5 rounded-2xl border border-blue-100 mb-4 flex items-center justify-center gap-2 hover:bg-blue-100 transition-colors active:scale-95"
               id="use-live-location-btn"
             >
-              <Navigation className="w-5 h-5" />
+              <Navigation className="w-4 h-4" />
               Use Current Location
             </button>
 
+            {/* Search History / Previous Searches Section shown when input is empty */}
+            {query.trim() === "" && (
+              <div className="mb-4 flex-none flex flex-col">
+                <div className="flex justify-between items-center mb-2.5">
+                  <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                    <span>🕒</span> Recent Searches
+                  </h3>
+                  {history.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={clearHistory}
+                      className="text-xs font-bold text-rose-500 hover:text-rose-600 transition-colors"
+                    >
+                      Clear All
+                    </button>
+                  )}
+                </div>
+                
+                {history.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[180px] overflow-y-auto no-scrollbar pb-1">
+                    {history.map((loc, i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        onClick={() => handleSelect(loc)}
+                        className="p-3 bg-slate-50 hover:bg-blue-50/50 border border-slate-100 rounded-xl text-left flex items-center justify-between group transition-all active:scale-[0.98]"
+                      >
+                        <div className="flex items-center gap-2.5 truncate">
+                          <MapPin className="w-3.5 h-3.5 text-slate-400 group-hover:text-blue-500 shrink-0" />
+                          <div className="truncate">
+                            <div className="font-bold text-xs text-slate-700 truncate">{loc.name}</div>
+                            <div className="text-[10px] text-slate-400 font-medium truncate">
+                              {loc.admin1 ? `${loc.admin1}, ` : ''}{loc.country}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-[8px] bg-white text-slate-400 font-bold px-1.5 py-0.5 rounded-full border border-slate-105 uppercase ml-2 shrink-0">
+                          {loc.country_code || '??'}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="text-center py-6 bg-slate-50/40 rounded-2xl border border-dashed border-slate-200/40">
+                    <p className="text-xs text-slate-400 font-medium">No recent searches yet.</p>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex-1 overflow-y-auto no-scrollbar pb-10">
               {error && (
-                <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl text-rose-600 text-sm font-medium text-center">
+                <div className="p-4 bg-rose-50 border border-rose-100 rounded-2xl text-rose-600 text-sm font-medium text-center mb-4">
                   {error}
                 </div>
               )}
@@ -128,8 +199,8 @@ export default function SearchModal({
                   results.map((loc, i) => (
                     <button
                       key={i}
-                      onClick={() => onSelect(loc)}
-                      className="w-full p-4 bg-white border border-slate-100 rounded-2xl text-left flex items-center justify-between group hover:border-blue-200 transition-all active:scale-95"
+                      onClick={() => handleSelect(loc)}
+                      className="w-full p-4 bg-white border border-slate-100 rounded-2xl text-left flex items-center justify-between group hover:border-blue-200 transition-all active:scale-95 shadow-sm"
                     >
                       <div className="flex items-center gap-4">
                         <div className="p-2 bg-slate-50 rounded-xl group-hover:bg-blue-50 group-hover:text-blue-600 transition-colors">
@@ -142,13 +213,13 @@ export default function SearchModal({
                           </div>
                         </div>
                       </div>
-                      <div className="text-[10px] bg-slate-50 text-slate-400 font-bold px-2 py-1 rounded-full uppercase tracking-tighter">
+                      <div className="text-[10px] bg-slate-50 text-slate-400 font-bold px-2 py-1 rounded-full uppercase tracking-tighter shadow-inner">
                         {loc.country_code || '??'}
                       </div>
                     </button>
                   ))
                 ) : (
-                  query.length >= 2 && !isSearching && (
+                  query.length >= 1 && !isSearching && (
                     <div className="text-center py-10">
                       <div className="bg-slate-50 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                         <Globe className="w-8 h-8 text-slate-200" />
