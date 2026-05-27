@@ -451,6 +451,43 @@ export default function App() {
   const searchTimeout = useRef<NodeJS.Timeout | null>(null);
   const watchId = useRef<number | null>(null);
 
+  // Unified Postal Code Tracker State
+  const [postalCodeQuery, setPostalCodeQuery] = useState("");
+  const [isPostalSearching, setIsPostalSearching] = useState(false);
+  const [postalError, setPostalError] = useState<string | null>(null);
+  const [trackedPostal, setTrackedPostal] = useState<string>(() => {
+    return localStorage.getItem("laundry_tracked_postal_code") || "";
+  });
+
+  const handlePostalCodeSubmit = async (queryStr: string) => {
+    if (!queryStr.trim()) return;
+    setIsPostalSearching(true);
+    setPostalError(null);
+    try {
+      const results = await searchLocation(queryStr.trim());
+      if (results && results.length > 0) {
+        const topLoc = results[0];
+        setCoords({ lat: topLoc.latitude, lon: topLoc.longitude });
+        setLocationName(`${topLoc.name}, ${topLoc.country}`);
+        setIsLiveLocation(false);
+        if (watchId.current !== null) {
+          navigator.geolocation.clearWatch(watchId.current);
+          watchId.current = null;
+        }
+        setTrackedPostal(queryStr.trim().toUpperCase());
+        localStorage.setItem("laundry_tracked_postal_code", queryStr.trim().toUpperCase());
+        setPostalCodeQuery("");
+        setPostalError(null);
+      } else {
+        setPostalError("No areas or postal codes found for this entry.");
+      }
+    } catch (e: any) {
+      setPostalError(e.message || "Failed to search postal area");
+    } finally {
+      setIsPostalSearching(false);
+    }
+  };
+
   const [now, setNow] = useState(Date.now());
   const [unhandledError, setUnhandledError] = useState<string | null>(null);
 
@@ -690,6 +727,10 @@ export default function App() {
   }, [isDrying, startTime, customMinutesOffset, customTimerDuration, pendingTimerDuration, coords, locationName, appSettings]);
 
   const getLocation = useCallback(() => {
+    // Clear custom tracked postal code when switching back to physical GPS location
+    setTrackedPostal("");
+    localStorage.removeItem("laundry_tracked_postal_code");
+
     // Clear previous watch if exists
     if (watchId.current !== null) {
       navigator.geolocation.clearWatch(watchId.current);
@@ -879,6 +920,18 @@ export default function App() {
       navigator.geolocation.clearWatch(watchId.current);
       watchId.current = null;
     }
+
+    // Check if the location looks like a tracked zip or postal code
+    const isPostalString = loc.name.includes('[') || loc.name.match(/\d+/) || searchQuery.match(/\d+/);
+    if (isPostalString) {
+      const pCode = loc.name.split('[')[0].trim();
+      setTrackedPostal(pCode);
+      localStorage.setItem("laundry_tracked_postal_code", pCode);
+    } else {
+      setTrackedPostal("");
+      localStorage.removeItem("laundry_tracked_postal_code");
+    }
+
     setShowSearch(false);
     setSearchQuery("");
     setSearchError(null);
@@ -1519,15 +1572,92 @@ export default function App() {
           </div>
         )}
 
+        {/* Postal Code Area Tracker Card */}
+        <div className={`p-4 rounded-3xl border shadow-sm transition-all duration-300 ${
+          theme.isDark 
+            ? 'bg-slate-900/60 border-slate-700/60 shadow-slate-950/20 text-slate-100' 
+            : 'bg-white border-slate-100 shadow-slate-100/50 text-slate-800'
+        }`}>
+          <div className="flex justify-between items-center mb-2.5">
+            <span className={`text-[10px] font-bold uppercase tracking-wider ${theme.isDark ? 'text-indigo-400' : 'text-blue-600'} flex items-center gap-1.5`}>
+              <Search className="w-3.5 h-3.5" /> Specific Area & Postal Code Tracker
+            </span>
+            {trackedPostal ? (
+              <span 
+                className="text-[9px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 cursor-pointer bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                onClick={getLocation} 
+                title="Click to clear and track via GPS"
+              >
+                Tracking: {trackedPostal} <span className="text-[11px] font-normal leading-none">×</span>
+              </span>
+            ) : (
+              <span className={`text-[9px] font-medium ${theme.isDark ? 'text-slate-500' : 'text-slate-400'}`}>
+                Filter by specific zip/postal code
+              </span>
+            )}
+          </div>
+
+          <form 
+            onSubmit={(e) => {
+              e.preventDefault();
+              handlePostalCodeSubmit(postalCodeQuery);
+            }}
+            className="flex gap-2"
+          >
+            <div className="relative flex-1">
+              <input
+                type="text"
+                placeholder="Enter postal code (e.g. 90210, SW1A)..."
+                value={postalCodeQuery}
+                onChange={(e) => setPostalCodeQuery(e.target.value)}
+                className={`w-full py-2 pl-3 pr-8 rounded-xl text-xs font-semibold outline-none border transition-all ${
+                  theme.isDark 
+                    ? 'bg-slate-950/40 border-slate-800 text-white placeholder-slate-600 focus:border-indigo-500/80' 
+                    : 'bg-slate-50 border-slate-150 text-slate-800 placeholder-slate-400 focus:border-blue-500/80 focus:bg-white'
+                }`}
+              />
+              {postalCodeQuery && (
+                <button
+                  type="button"
+                  onClick={() => setPostalCodeQuery("")}
+                  className={`absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold leading-none ${
+                    theme.isDark ? 'text-slate-500 hover:text-slate-300' : 'text-slate-400 hover:text-slate-600'
+                  }`}
+                >
+                  ×
+                </button>
+              )}
+            </div>
+            <button
+              type="submit"
+              disabled={isPostalSearching || !postalCodeQuery.trim()}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-40 select-none ${
+                theme.isDark 
+                  ? 'bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95' 
+                  : 'bg-blue-600 text-white hover:bg-blue-500 active:scale-95'
+              }`}
+            >
+              {isPostalSearching ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Set'}
+            </button>
+          </form>
+
+          {postalError && (
+            <div className="mt-2 text-[10px] text-rose-500 font-semibold flex items-center gap-1">
+              <span>⚠️</span> {postalError}
+            </div>
+          )}
+        </div>
+
         {/* Connection Failure or No Data */}
         {error && !weather && errorContent}
 
-         {/* Animated Climate Companion Hero Screen */}
+        {/* Animated Climate Companion Hero Screen */}
         {weather && (() => {
           const code = weather.current.weather_code;
+          const isDay = weather.current.is_day === 1;
           const isRaining = code >= 51 && code <= 69 || code >= 80 && code <= 82 || code >= 95;
           const isOvercast = code === 2 || code === 3 || code === 45 || code === 48;
-          const isClear = code <= 1;
+          const isClear = code <= 1 || (!isRaining && !isOvercast); // Default fallback to clear
           const currentWind = weather.current.wind_speed_10m ?? 0;
 
           // Solar UV calculations based on cloud cover percentage
@@ -1543,45 +1673,110 @@ export default function App() {
           if (hum > 75) evapPerf = "Stagnant Damp (8%/hr)";
           else if (hum > 55) evapPerf = "Moderate Evap (14%/hr)";
 
+          // Define beautiful dynamic weather parameters
+          let heroBg = '';
+          let skyBg = '';
+          let textTitle = '';
+          let textDesc = '';
+          let textTempLabel = '';
+          let textTempDegree = '';
+          let badgeClass = '';
+          let overlayAura = '';
+          let borderSlate = '';
+          let simulatorText = 'text-slate-400 border-slate-500/5 bg-slate-500/5';
+          let meteringBg = '';
+          let cardSub = '';
+          let cardSubText = '';
+
+          if (!isDay) {
+            // NIGHT (Universal Cozy Midnight Theme)
+            heroBg = 'bg-slate-900 border-slate-800 shadow-indigo-950/20 text-slate-100';
+            skyBg = 'bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950';
+            borderSlate = 'border-slate-800/85';
+            textTitle = 'text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]';
+            textDesc = 'text-indigo-200/90';
+            textTempLabel = 'text-slate-400';
+            textTempDegree = 'text-indigo-400';
+            badgeClass = 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30 backdrop-blur-sm';
+            overlayAura = 'from-violet-600/15 via-slate-955/0 to-indigo-500/15';
+            simulatorText = 'text-indigo-300 border-indigo-805 bg-slate-900/60';
+            meteringBg = 'bg-slate-900/60';
+            cardSub = 'bg-slate-950/40 border-slate-800/80';
+            cardSubText = 'text-slate-200';
+          } else if (isRaining) {
+            // RAINING Storm / Monsoon / Heavy Clouds
+            heroBg = 'bg-slate-900 border-slate-800 shadow-blue-950/25 text-slate-100';
+            skyBg = 'bg-gradient-to-br from-slate-800 via-slate-900 to-blue-950';
+            borderSlate = 'border-slate-800/85';
+            textTitle = 'text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)]';
+            textDesc = 'text-slate-300';
+            textTempLabel = 'text-slate-400';
+            textTempDegree = 'text-sky-400 font-extrabold';
+            badgeClass = 'bg-rose-500/20 text-rose-300 border-rose-500/35 backdrop-blur-sm';
+            overlayAura = 'from-blue-600/10 via-slate-900/0 to-cyan-500/15';
+            simulatorText = 'text-sky-300 border-slate-800 bg-slate-900/40';
+            meteringBg = 'bg-slate-900/60';
+            cardSub = 'bg-slate-950/40 border-slate-800/80';
+            cardSubText = 'text-slate-200';
+          } else if (isOvercast) {
+            // LIGHT CLOUDFALL / OVERCAST (Elegant clean grayish-blue theme)
+            heroBg = 'bg-white border-slate-200 shadow-slate-100 text-slate-800';
+            skyBg = 'bg-gradient-to-br from-slate-150 via-sky-50 to-slate-250';
+            borderSlate = 'border-slate-200/60';
+            textTitle = 'text-slate-800 font-bold';
+            textDesc = 'text-slate-500';
+            textTempLabel = 'text-slate-400';
+            textTempDegree = 'text-slate-700';
+            badgeClass = 'bg-slate-500/10 text-slate-600 border-slate-550/15 backdrop-blur-sm';
+            overlayAura = 'from-sky-400/5 via-slate-100/0 to-slate-200/10';
+            simulatorText = 'text-slate-500 border-slate-200 bg-slate-100/40';
+            meteringBg = 'bg-slate-50/50';
+            cardSub = 'bg-white border-slate-100/80 shadow-sm';
+            cardSubText = 'text-slate-800';
+          } else {
+            // SUNNY / CLEAR GOLD (Vivid amber gold-orange sunburst)
+            heroBg = 'bg-white border-slate-100 shadow-slate-105/50 text-slate-805';
+            skyBg = 'bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500';
+            borderSlate = 'border-amber-400/20';
+            textTitle = 'text-white font-extrabold drop-shadow-[0_2px_3px_rgba(0,0,0,0.15)]';
+            textDesc = 'text-amber-50/90 font-medium drop-shadow-[0_1px_2px_rgba(0,0,0,0.1)]';
+            textTempLabel = 'text-amber-100/80';
+            textTempDegree = 'text-white drop-shadow-[0_2px_3px_rgba(0,0,0,0.1)]';
+            badgeClass = 'bg-white/20 text-white border-white/35 backdrop-blur-md';
+            overlayAura = 'from-amber-200/25 via-amber-300/10 to-yellow-300/15';
+            simulatorText = 'text-amber-100 border-white/20 bg-white/10';
+            meteringBg = 'bg-slate-50/50';
+            cardSub = 'bg-white border-slate-100/80 shadow-sm';
+            cardSubText = 'text-slate-800';
+          }
+
           return (
             <motion.section 
               initial={{ opacity: 0, y: 30, scale: 0.97 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               transition={{ type: "spring", stiffness: 90, damping: 15 }}
               whileHover={{ y: -3 }}
-              className={`rounded-3xl overflow-hidden relative shadow-xl border transition-all duration-500 flex flex-col ${
-                theme.isDark 
-                  ? 'bg-slate-900 border-slate-800 shadow-indigo-950/20 text-slate-100' 
-                  : 'bg-white border-slate-100/80 shadow-slate-200/40 text-slate-800'
-              }`}
+              className={`rounded-3xl overflow-hidden relative shadow-xl border transition-all duration-500 flex flex-col ${heroBg}`}
             >
               
               {/* Dynamic Weather Sky Layer Animation */}
-              <div className={`p-6 relative overflow-hidden flex flex-col justify-between min-h-[290px] border-b ${
-                theme.isDark ? 'border-slate-800/80' : 'border-slate-100'
-              } ${
-                weatherAlert?.level === 'danger' ? 'bg-gradient-to-br from-rose-500/10 to-transparent' :
-                weatherAlert?.level === 'warning' ? 'bg-gradient-to-br from-amber-400/10 to-transparent' :
-                'bg-gradient-to-br from-blue-500/5 to-transparent'
-              }`}>
+              <div className={`p-6 relative overflow-hidden flex flex-col justify-between min-h-[295px] border-b ${borderSlate} ${skyBg}`}>
                 {/* Immersive Shifting Atmospheric Aura backdrop */}
                 <motion.div
                   animate={{
-                    scale: [1, 1.12, 0.93, 1],
-                    x: [0, 18, -12, 0],
-                    y: [0, -12, 18, 0],
+                    scale: [1, 1.15, 0.9, 1],
+                    x: [0, 15, -15, 0],
+                    y: [0, -10, 15, 0],
                   }}
                   transition={{
                     repeat: Infinity,
-                    duration: 18,
+                    duration: 15,
                     ease: "easeInOut",
                   }}
-                  className={`absolute inset-0 opacity-40 blur-3xl pointer-events-none bg-gradient-to-tr ${
-                    theme.isDark
-                      ? 'from-indigo-600/10 via-slate-900/0 to-emerald-500/10'
-                      : 'from-amber-400/10 via-blue-200/5 to-sky-400/15'
-                  }`}
+                  className="absolute inset-0 opacity-40 blur-3xl pointer-events-none bg-gradient-to-tr"
+                  style={{ backgroundImage: `linear-gradient(to top right, ${overlayAura})` }}
                 />
+                
                 {/* Weather Particle Backdrop Overlays */}
                 {isRaining && <RainFallAnimation />}
                 {isClear && <SunnySparkleAnimation />}
@@ -1589,19 +1784,15 @@ export default function App() {
 
                 {/* Sky header controls */}
                 <div className="flex justify-between items-start relative z-10 w-full mb-2">
-                  <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full flex items-center gap-1.5 backdrop-blur-md shadow-sm border ${
-                    weatherAlert?.level === 'danger' ? 'bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/30' :
-                    weatherAlert?.level === 'warning' ? 'bg-amber-400/20 text-amber-600 dark:text-amber-400 border-amber-500/30' :
-                    'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/10'
-                  }`}>
+                  <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full flex items-center gap-1.5 ${badgeClass}`}>
                     <span className="relative flex h-1.5 w-1.5">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500"></span>
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-current opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-current"></span>
                     </span>
-                    {weather ? getWeatherStatus(weather.current.weather_code) : 'Atmosphere Monitor'}
+                    {getWeatherStatus(code)}
                   </span>
 
-                  <span className="text-[9px] font-mono tracking-wider font-bold text-slate-400 uppercase bg-slate-500/5 px-2 py-0.5 rounded-md border border-slate-500/5">
+                  <span className={`text-[9px] font-mono tracking-wider font-bold uppercase px-2 py-0.5 rounded-md border ${simulatorText}`}>
                     Live Simulator
                   </span>
                 </div>
@@ -1612,54 +1803,46 @@ export default function App() {
                 {/* Drying core conditions info */}
                 <div className="relative z-10 space-y-1.5 mt-2">
                   <div className="flex justify-between items-end">
-                    <div>
-                      <h2 className="text-3xl font-display font-bold tracking-tight text-slate-800 dark:text-white">
+                    <div className="flex-1 min-w-0 pr-3">
+                      <h2 className={`text-3xl font-display font-bold tracking-tight mb-0.5 ${textTitle}`}>
                         {weatherAlert?.level === 'danger' ? 'Rain Imminent!' : weatherAlert?.level === 'warning' ? 'Hazards Predicted' : dryness?.statusText || 'Perfect Drying'}
                       </h2>
-                      <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-[90%]">
+                      <p className={`text-[11px] font-medium leading-normal line-clamp-2 ${textDesc}`}>
                         {weatherAlert?.message || "Atmosphere looks secure. Optimal window to clean and hang clothes."}
                       </p>
                     </div>
 
-                    <div className="text-right">
-                      <div className="text-3xl font-display font-extrabold text-blue-600 dark:text-indigo-400">{weather.current?.temperature_2m ?? '--'}°</div>
-                      <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Outdoor Skies</div>
+                    <div className="text-right shrink-0">
+                      <div className={`text-3xl font-display font-extrabold ${textTempDegree}`}>{weather.current?.temperature_2m ?? '--'}°</div>
+                      <div className={`text-[9px] font-bold uppercase tracking-wider ${textTempLabel}`}>Outdoor Skies</div>
                     </div>
                   </div>
                 </div>
               </div>
 
               {/* Advanced Atmospheric Metering Panel (Famous Care Apps Option) */}
-              <div className={`p-4 ${
-                theme.isDark ? 'bg-slate-900/60' : 'bg-slate-50/50'
-              } grid grid-cols-3 gap-2.5 text-center`}>
-                <div className={`p-2.5 rounded-2xl border ${
-                  theme.isDark ? 'bg-slate-950/40 border-slate-800/80' : 'bg-white border-slate-100/80 shadow-sm'
-                }`}>
+              <div className={`p-4 ${meteringBg} grid grid-cols-3 gap-2.5 text-center`}>
+                <div className={`p-2.5 rounded-2xl border ${cardSub}`}>
                   <div className="flex items-center justify-center gap-1 text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-                    <Sun className="w-3 h-3 text-amber-500" /> UV Rate Index
+                    <Sun className="w-3 h-3 text-amber-500 animate-pulse" /> UV Rate Index
                   </div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{uvIndex}</div>
+                  <div className="text-xs font-bold">{uvIndex}</div>
                   <div className="text-[7.5px] text-slate-400 font-medium mt-0.5">Evap core radiation</div>
                 </div>
 
-                <div className={`p-2.5 rounded-2xl border ${
-                  theme.isDark ? 'bg-slate-950/40 border-slate-800/80' : 'bg-white border-slate-100/80 shadow-sm'
-                }`}>
+                <div className={`p-2.5 rounded-2xl border ${cardSub}`}>
                   <div className="flex items-center justify-center gap-1 text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-                    <Wind className="w-3 h-3 text-sky-500 animate-spin" style={{ animationDuration: '6s' }} /> Wind Uplift
+                    <Wind className="w-3 h-3 text-sky-500 animate-spin" style={{ animationDuration: '5s' }} /> Wind Uplift
                   </div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{currentWind} km/h</div>
+                  <div className="text-xs font-bold">{currentWind} km/h</div>
                   <div className="text-[7.5px] text-slate-400 font-medium mt-0.5">Mechanical fiber shake</div>
                 </div>
 
-                <div className={`p-2.5 rounded-2xl border ${
-                  theme.isDark ? 'bg-slate-950/40 border-slate-800/80' : 'bg-white border-slate-100/80 shadow-sm'
-                }`}>
+                <div className={`p-2.5 rounded-2xl border ${cardSub}`}>
                   <div className="flex items-center justify-center gap-1 text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-                    <Droplets className="w-3 h-3 text-blue-500" /> Vapor Flow
+                    <Droplets className="w-3 h-3 text-blue-500 animate-bounce" /> Vapor Flow
                   </div>
-                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{weather.current?.relative_humidity_2m ?? '--'}%</div>
+                  <div className="text-xs font-bold">{weather.current?.relative_humidity_2m ?? '--'}%</div>
                   <div className="text-[7.5px] text-slate-400 font-medium mt-0.5">{evapPerf.split(' (')[0]}</div>
                 </div>
               </div>
