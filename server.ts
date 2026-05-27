@@ -86,7 +86,45 @@ app.get("/api/search", async (req, res) => {
   try {
     console.log(`[Search] Unified geocoding lookup for: "${queryStr}"`);
     
-    // 1. Try Nominatim Geocoding first (excellent for postal codes & general queries)
+    // 1. If query looks like a postal code/zip (contains digits and has length >= 3), try Zippopotam.us in parallel for high accuracy and no rate limits
+    const cleanPostal = queryStr.toUpperCase();
+    const hasNum = /\d+/.test(cleanPostal);
+    if (hasNum && cleanPostal.length >= 3) {
+      const targetCountries = ['us', 'gb', 'ca', 'au', 'fr', 'de', 'nl', 'es', 'it'];
+      // Extract first word/alpha chunk (e.g., "SW1A" from "SW1A 1AA")
+      const firstToken = cleanPostal.split(/\s+/)[0];
+      const lookupCodes = Array.from(new Set([cleanPostal, firstToken])).filter(c => c.length >= 3);
+
+      const zippoPromises = lookupCodes.flatMap(code => 
+        targetCountries.map(async (cc) => {
+          try {
+            const zippoUrl = `https://api.zippopotam.us/${cc}/${encodeURIComponent(code)}`;
+            const zippoRes = await fetch(zippoUrl);
+            if (zippoRes.ok) {
+              const zippoData = await zippoRes.json();
+              if (zippoData && zippoData.places && zippoData.places.length > 0) {
+                zippoData.places.forEach((place: any) => {
+                  addResult({
+                    id: `zippo_${cc}_${code}_${place['place name']}`.replace(/[^a-zA-Z0-9]/g, '_'),
+                    name: `${code} [${place['place name']}]`,
+                    latitude: parseFloat(place.latitude),
+                    longitude: parseFloat(place.longitude),
+                    country: zippoData.country || cc.toUpperCase(),
+                    country_code: cc.toUpperCase(),
+                    admin1: place.state || ""
+                  });
+                });
+              }
+            }
+          } catch (e) {
+            // silent fail for parallel searches
+          }
+        })
+      );
+      await Promise.all(zippoPromises);
+    }
+
+    // 2. Try Nominatim Geocoding (excellent for postal codes & general queries, but has rate limits)
     const nominatimUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(queryStr)}&format=json&addressdetails=1&limit=5`;
     try {
       const nomRes = await fetch(nominatimUrl, {
@@ -128,7 +166,7 @@ app.get("/api/search", async (req, res) => {
       console.warn("Nominatim Geocoding failed:", nomErr);
     }
 
-    // 2. Complement with Open-Meteo Geocoding to ensure full regional coverage
+    // 3. Complement with Open-Meteo Geocoding to ensure full regional city/village coverage
     const openMeteoUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(queryStr)}&count=5&language=en&format=json`;
     try {
       const omRes = await fetch(openMeteoUrl);

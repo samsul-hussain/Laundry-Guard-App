@@ -73,6 +73,37 @@ export default function SearchModal({
               )}
             </div>
 
+            {/* Advanced Dynamic Search Help Bar / Interactive Guidelines */}
+            <div className="bg-slate-50/70 border border-slate-100/80 rounded-2xl p-4 mb-6">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700 mb-2.5">
+                <span className="text-amber-500 animate-pulse">💡</span>
+                <span>Specific Area & Postal Code Search Tips</span>
+              </div>
+              <p className="text-[11px] text-slate-500 font-semibold mb-3 leading-relaxed">
+                Looking for a local drying window? Tap any live postal example below to instantly resolve specific neighborhood ranges & coordinates:
+              </p>
+              <div className="flex flex-wrap gap-1.5" id="search-help-chips">
+                {[
+                  { label: "US Beverly Hills (90210)", value: "90210" },
+                  { label: "UK London (SW1A)", value: "SW1A" },
+                  { label: "AU Sydney (2000)", value: "2000" },
+                  { label: "CA Montreal (H3B)", value: "H3B" },
+                  { label: "FR Paris (75001)", value: "75001" },
+                  { label: "JP Shibuya", value: "Shibuya" },
+                  { label: "DE Berlin", value: "Berlin" },
+                ].map((chip) => (
+                  <button
+                    key={chip.value}
+                    type="button"
+                    onClick={() => setQuery(chip.value)}
+                    className="text-[10px] font-bold px-2.5 py-1.5 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-600 border border-slate-200/80 hover:border-blue-200 rounded-xl transition-all shadow-sm flex items-center gap-1 active:scale-95"
+                  >
+                    <span>📍</span> {chip.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <button
               onClick={() => {
                 onUseLiveLocation();

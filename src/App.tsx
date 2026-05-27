@@ -77,55 +77,61 @@ const getTheme = (weather: WeatherData | null) => {
     header: "text-slate-900",
     accent: "bg-blue-600",
     card: "bg-white",
-    dot: "bg-blue-500"
+    dot: "bg-blue-500",
+    bodyBg: "#f8fafc"
   };
 
   const code = weather.current.weather_code;
   const isDay = weather.current.is_day === 1;
 
   if (!isDay) return {
-    bg: "bg-slate-900",
-    header: "text-white",
-    accent: "bg-indigo-500",
-    card: "bg-slate-800/80 backdrop-blur-md border-slate-700",
+    bg: "bg-slate-950",
+    header: "text-indigo-100",
+    accent: "bg-indigo-600",
+    card: "bg-slate-900 border-slate-800 shadow-xl shadow-slate-950/45",
     dot: "bg-indigo-400",
-    isDark: true
+    isDark: true,
+    bodyBg: "#060913"
   };
 
-  // Clear / Mainly clear
+  // Clear / Mainly clear (Deep Golden Sunny Day)
   if (code <= 1) return {
-    bg: "bg-amber-50",
-    header: "text-amber-900",
-    accent: "bg-orange-500",
-    card: "bg-white/90 shadow-orange-100/50",
-    dot: "bg-orange-500"
+    bg: "bg-[#fdf6e2]",
+    header: "text-amber-950",
+    accent: "bg-amber-600",
+    card: "bg-white border border-amber-200/50 shadow-md shadow-amber-100/40",
+    dot: "bg-amber-500",
+    bodyBg: "#f7ebd1"
   };
 
   // Cloudy
   if (code <= 3) return {
     bg: "bg-slate-100",
-    header: "text-slate-800",
-    accent: "bg-blue-500",
-    card: "bg-white/90 shadow-slate-200/50",
-    dot: "bg-blue-500"
+    header: "text-slate-900",
+    accent: "bg-blue-550",
+    card: "bg-white border border-slate-200/50 shadow-sm",
+    dot: "bg-blue-500",
+    bodyBg: "#f1f5f9"
   };
 
   // Fog / Drizzle / Rain
   if (code <= 69 || (code >= 80 && code <= 82)) return {
-    bg: "bg-blue-50",
-    header: "text-blue-900",
+    bg: "bg-sky-50/60",
+    header: "text-slate-900",
     accent: "bg-blue-600",
-    card: "bg-white/90 shadow-blue-100/50",
-    dot: "bg-blue-500"
+    card: "bg-white border border-blue-100/40 shadow-sm",
+    dot: "bg-blue-500",
+    bodyBg: "#f0f7ff"
   };
 
   // Thunderstorm / Snow
   return {
-    bg: "bg-slate-200",
+    bg: "bg-slate-100",
     header: "text-slate-900",
-    accent: "bg-slate-700",
-    card: "bg-white/90 shadow-slate-300/50",
-    dot: "bg-slate-500"
+    accent: "bg-slate-750",
+    card: "bg-white border border-slate-200 shadow-sm",
+    dot: "bg-slate-500",
+    bodyBg: "#f1f5f9"
   };
 };
 
@@ -166,26 +172,56 @@ const getWeatherStatus = (code: number) => {
 // --- PREMIUM WEATHER BACKGROUND PARTICLE ENGINES & GRAPHICS ---
 
 const RainFallAnimation = () => {
-  const drops = Array.from({ length: 14 });
+  const drops = Array.from({ length: 22 });
+  const clouds = Array.from({ length: 3 });
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+      <motion.div
+        animate={{
+          opacity: [0.15, 0.25, 0.15],
+        }}
+        transition={{
+          duration: 10,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="absolute inset-0 bg-blue-950/20 blur-xl"
+      />
+      {clouds.map((_, i) => (
+        <motion.div
+          key={i}
+          initial={{ x: -100 - i * 50 }}
+          animate={{ x: 450 + i * 50 }}
+          transition={{
+            duration: 25 + i * 5,
+            repeat: Infinity,
+            ease: "linear",
+          }}
+          className="absolute opacity-15 bg-slate-950 rounded-full blur-[6px]"
+          style={{
+            top: `${10 + i * 15}px`,
+            width: `${70 + i * 30}px`,
+            height: `${25 + i * 10}px`,
+          }}
+        />
+      ))}
       {drops.map((_, idx) => {
-        const left = (idx * 7.5) + (Math.random() * 4);
-        const delay = Math.random() * 1.6;
-        const duration = 0.5 + Math.random() * 0.4;
-        const height = 12 + Math.random() * 16;
+        const left = (idx * 4.5) + (Math.random() * 3);
+        const delay = Math.random() * 1.5;
+        const duration = 0.45 + Math.random() * 0.35;
+        const height = 14 + Math.random() * 18;
         return (
           <motion.div
             key={idx}
             initial={{ y: -45, opacity: 0 }}
-            animate={{ y: 320, opacity: [0, 0.7, 0.5, 0] }}
+            animate={{ y: 320, opacity: [0, 0.75, 0.5, 0] }}
             transition={{
               duration: duration,
               repeat: Infinity,
               delay: delay,
               ease: "linear"
             }}
-            className="absolute bg-white/45 w-[1.5px] rounded-full"
+            className="absolute bg-gradient-to-b from-sky-200/50 to-blue-400/80 w-[1.5px] rounded-full"
             style={{
               left: `${left}%`,
               height: `${height}px`,
@@ -198,25 +234,62 @@ const RainFallAnimation = () => {
 };
 
 const SunnySparkleAnimation = () => {
-  const sparkles = Array.from({ length: 7 });
+  const sparkles = Array.from({ length: 9 });
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
       <motion.div
+        animate={{
+          scale: [1, 1.1, 0.95, 1],
+          opacity: [0.35, 0.55, 0.35],
+        }}
+        transition={{
+          duration: 8,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="absolute -top-16 -right-16 w-80 h-80 rounded-full bg-gradient-to-br from-amber-400/30 via-yellow-300/20 to-orange-500/10 blur-3xl"
+      />
+      <motion.div
         animate={{ rotate: 360 }}
-        transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
-        className="absolute -top-12 -right-12 w-72 h-72 rounded-full border border-amber-300/10 bg-gradient-to-br from-amber-300/20 to-transparent opacity-40 blur-lg"
+        transition={{ duration: 45, repeat: Infinity, ease: "linear" }}
+        className="absolute -top-10 -right-10 w-44 h-44 rounded-full border border-amber-300/20 bg-gradient-to-br from-amber-300/40 via-yellow-400/25 to-transparent opacity-80 blur-md flex items-center justify-center"
+      >
+        <div className="absolute inset-0 flex items-center justify-center">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute w-1 h-32 bg-gradient-to-b from-amber-300/30 to-transparent"
+              style={{
+                transform: `rotate(${i * 45}deg)`,
+                transformOrigin: "center",
+              }}
+            />
+          ))}
+        </div>
+      </motion.div>
+      <motion.div
+        animate={{
+          scale: [1, 1.06, 1],
+        }}
+        transition={{
+          duration: 4,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="absolute -top-4 -right-4 w-24 h-24 rounded-full bg-gradient-to-br from-amber-350 to-amber-500 shadow-xl shadow-amber-500/25"
       />
       {sparkles.map((_, idx) => {
-        const left = 20 + (idx * 11) + (Math.random() * 5);
-        const top = 15 + Math.random() * 60;
-        const delay = Math.random() * 1.8;
-        const duration = 1.3 + Math.random() * 1.2;
+        const left = 15 + (idx * 10) + (Math.random() * 4);
+        const top = 10 + Math.random() * 65;
+        const delay = Math.random() * 2;
+        const duration = 1.6 + Math.random() * 1.4;
         return (
           <motion.div
             key={idx}
             animate={{
-              scale: [0, 1.15, 0],
-              opacity: [0, 0.8, 0],
+              scale: [0, 1.1, 0],
+              opacity: [0, 0.75, 0],
+              y: [0, -10, 0]
             }}
             transition={{
               duration: duration,
@@ -230,8 +303,71 @@ const SunnySparkleAnimation = () => {
               top: `${top}%`,
             }}
           >
-            <Sun className="w-2.5 h-2.5 text-amber-300 fill-amber-300/50" />
+            <Sun className="w-2.5 h-2.5 text-amber-200 fill-amber-200/40" />
           </motion.div>
+        );
+      })}
+    </div>
+  );
+};
+
+const NightSkyAnimation = () => {
+  const stars = Array.from({ length: 12 });
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+      <motion.div
+        animate={{
+          scale: [1, 1.15, 0.95, 1],
+          opacity: [0.25, 0.45, 0.45],
+        }}
+        transition={{
+          duration: 12,
+          repeat: Infinity,
+          ease: "easeInOut",
+        }}
+        className="absolute -bottom-10 -left-10 w-72 h-72 rounded-full bg-indigo-900/30 blur-3xl"
+      />
+      <motion.div
+        animate={{
+          y: [0, -3, 0],
+        }}
+        transition={{
+          duration: 6,
+          repeat: Infinity,
+          ease: "easeInOut"
+        }}
+        className="absolute top-6 right-8 w-12 h-12 rounded-full bg-gradient-to-br from-indigo-100 to-indigo-300 shadow-md shadow-indigo-500/20 flex items-center justify-center opacity-85"
+      >
+        <div className="absolute w-2 h-2 bg-indigo-400/30 rounded-full top-2 left-3 blur-[0.5px]" />
+        <div className="absolute w-3.5 h-3.5 bg-indigo-400/35 rounded-full bottom-3 right-3 blur-[0.5px]" />
+        <div className="absolute w-2 h-2 bg-indigo-400/30 rounded-full bottom-2 left-4 blur-[0.5px]" />
+      </motion.div>
+      {stars.map((_, idx) => {
+        const left = 5 + (idx * 9) + (Math.random() * 3);
+        const top = 5 + Math.random() * 70;
+        const delay = Math.random() * 2;
+        const duration = 2.0 + Math.random() * 2.0;
+        return (
+          <motion.div
+            key={idx}
+            animate={{
+              scale: [0, 1, 0],
+              opacity: [0, 0.85, 0],
+            }}
+            transition={{
+              duration: duration,
+              repeat: Infinity,
+              delay: delay,
+              ease: "easeInOut"
+            }}
+            className="absolute rounded-full bg-white shadow-xl shadow-white/80"
+            style={{
+              left: `${left}%`,
+              top: `${top}%`,
+              width: `${1 + Math.random() * 1.5}px`,
+              height: `${1 + Math.random() * 1.5}px`,
+            }}
+          />
         );
       })}
     </div>
@@ -674,12 +810,11 @@ export default function App() {
   useEffect(() => {
     if (theme.isDark) {
       document.documentElement.classList.add('dark');
-      document.body.style.backgroundColor = '#0b1329'; // High-contrast deep slate navy background
     } else {
       document.documentElement.classList.remove('dark');
-      document.body.style.backgroundColor = '#f8fafc'; // Elegant clean slate slate-50 background
     }
-  }, [theme.isDark]);
+    document.body.style.backgroundColor = theme.bodyBg || '#f8fafc';
+  }, [theme.isDark, theme.bodyBg]);
 
   // Initialize from localStorage
   useEffect(() => {
@@ -1646,6 +1781,38 @@ export default function App() {
               <span>⚠️</span> {postalError}
             </div>
           )}
+
+          {/* Inline Postal Search Help Quick Chips */}
+          <div className="mt-3 pt-2.5 border-t border-slate-150/10 flex flex-col gap-1.5">
+            <span className={`text-[9px] font-bold uppercase tracking-wider ${theme.isDark ? 'text-indigo-400/80' : 'text-blue-600/80'}`}>
+              ⚡️ Quick Search Help (Tap to resolve):
+            </span>
+            <div className="flex flex-wrap gap-1">
+              {[
+                { label: "US Zip (90210)", value: "90210" },
+                { label: "UK Post (SW1A)", value: "SW1A" },
+                { label: "AU Post (2000)", value: "2000" },
+                { label: "CA Post (H3B)", value: "H3B" },
+                { label: "FR Postal (75001)", value: "75001" },
+              ].map((chip) => (
+                <button
+                  key={chip.value}
+                  type="button"
+                  onClick={() => {
+                    setPostalCodeQuery(chip.value);
+                    handlePostalCodeSubmit(chip.value);
+                  }}
+                  className={`text-[9px] font-bold px-2 py-1 rounded-lg border transition-all active:scale-95 flex items-center gap-0.5 ${
+                    theme.isDark
+                      ? 'bg-slate-950/30 hover:bg-indigo-500/10 border-slate-800 text-slate-400 hover:text-indigo-300'
+                      : 'bg-slate-50 hover:bg-blue-50 border-slate-200/60 text-slate-600 hover:text-blue-600'
+                  }`}
+                >
+                  📍 {chip.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Connection Failure or No Data */}
@@ -1689,23 +1856,23 @@ export default function App() {
           let cardSubText = '';
 
           if (!isDay) {
-            // NIGHT (Universal Cozy Midnight Theme)
-            heroBg = 'bg-slate-900 border-slate-800 shadow-indigo-950/20 text-slate-100';
+            // NIGHT (Universal Cozy Midnight Theme with Animated Starglow stars)
+            heroBg = 'bg-slate-900 border-slate-800 shadow-xl shadow-indigo-950/20 text-slate-100';
             skyBg = 'bg-gradient-to-br from-slate-950 via-slate-900 to-indigo-950';
             borderSlate = 'border-slate-800/85';
             textTitle = 'text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.5)]';
             textDesc = 'text-indigo-200/90';
             textTempLabel = 'text-slate-400';
             textTempDegree = 'text-indigo-400';
-            badgeClass = 'bg-indigo-500/20 text-indigo-300 border-indigo-500/30 backdrop-blur-sm';
+            badgeClass = 'bg-indigo-500/25 text-indigo-300 border-indigo-500/30 backdrop-blur-sm';
             overlayAura = 'from-violet-600/15 via-slate-955/0 to-indigo-500/15';
             simulatorText = 'text-indigo-300 border-indigo-805 bg-slate-900/60';
             meteringBg = 'bg-slate-900/60';
             cardSub = 'bg-slate-950/40 border-slate-800/80';
             cardSubText = 'text-slate-200';
           } else if (isRaining) {
-            // RAINING Storm / Monsoon / Heavy Clouds
-            heroBg = 'bg-slate-900 border-slate-800 shadow-blue-950/25 text-slate-100';
+            // RAINING Storm / Monsoon / Heavy Clouds with Droplets rainfall
+            heroBg = 'bg-slate-900 border-slate-800 shadow-xl shadow-blue-950/25 text-slate-100';
             skyBg = 'bg-gradient-to-br from-slate-800 via-slate-900 to-blue-950';
             borderSlate = 'border-slate-800/85';
             textTitle = 'text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.4)]';
@@ -1734,20 +1901,20 @@ export default function App() {
             cardSub = 'bg-white border-slate-100/80 shadow-sm';
             cardSubText = 'text-slate-800';
           } else {
-            // SUNNY / CLEAR GOLD (Vivid amber gold-orange sunburst)
-            heroBg = 'bg-white border-slate-100 shadow-slate-105/50 text-slate-805';
-            skyBg = 'bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500';
-            borderSlate = 'border-amber-400/20';
-            textTitle = 'text-white font-extrabold drop-shadow-[0_2px_3px_rgba(0,0,0,0.15)]';
-            textDesc = 'text-amber-50/90 font-medium drop-shadow-[0_1px_2px_rgba(0,0,0,0.1)]';
-            textTempLabel = 'text-amber-100/80';
-            textTempDegree = 'text-white drop-shadow-[0_2px_3px_rgba(0,0,0,0.1)]';
-            badgeClass = 'bg-white/20 text-white border-white/35 backdrop-blur-md';
-            overlayAura = 'from-amber-200/25 via-amber-300/10 to-yellow-300/15';
-            simulatorText = 'text-amber-100 border-white/20 bg-white/10';
-            meteringBg = 'bg-slate-50/50';
-            cardSub = 'bg-white border-slate-100/80 shadow-sm';
-            cardSubText = 'text-slate-800';
+            // SUNNY / CLEAR GOLD (Deeper golden sunburst, beautiful honey design with deep dark amber text/theme contrast)
+            heroBg = 'bg-amber-50/60 border-amber-200/50 shadow-sm shadow-amber-100/40 text-amber-950';
+            skyBg = 'bg-gradient-to-br from-amber-100 via-amber-200 to-amber-350';
+            borderSlate = 'border-amber-200/40';
+            textTitle = 'text-amber-950 font-black drop-shadow-sm';
+            textDesc = 'text-amber-900 font-semibold';
+            textTempLabel = 'text-amber-800/95 font-bold';
+            textTempDegree = 'text-amber-950 font-black';
+            badgeClass = 'bg-amber-950/10 text-amber-950 border-amber-950/20 backdrop-blur-md font-extrabold';
+            overlayAura = 'from-amber-200/35 via-yellow-200/15 to-orange-200/25';
+            simulatorText = 'text-amber-950 border-amber-950/10 bg-amber-950/5 font-bold';
+            meteringBg = 'bg-amber-50/25';
+            cardSub = 'bg-white/95 border-amber-100/70 shadow-sm text-amber-950';
+            cardSubText = 'text-amber-950';
           }
 
           return (
@@ -1779,8 +1946,9 @@ export default function App() {
                 
                 {/* Weather Particle Backdrop Overlays */}
                 {isRaining && <RainFallAnimation />}
-                {isClear && <SunnySparkleAnimation />}
-                {isOvercast && <CloudOvercastAnimation />}
+                {!isDay && <NightSkyAnimation />}
+                {isDay && isClear && <SunnySparkleAnimation />}
+                {isDay && isOvercast && <CloudOvercastAnimation />}
 
                 {/* Sky header controls */}
                 <div className="flex justify-between items-start relative z-10 w-full mb-2">
