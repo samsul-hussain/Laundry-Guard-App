@@ -460,3 +460,63 @@ export async function sendVoiceCommand(params: {
   }
   return runLocalFallback();
 }
+
+export interface ClientEmailLog {
+  id: string;
+  to: string;
+  subject: string;
+  htmlBody: string;
+  textBody: string;
+  sentAt: string;
+  delivered: boolean;
+  method: "SMTP" | "Simulated Platform Routing";
+  error?: string;
+}
+
+export async function sendEmailNotification(params: {
+  to: string;
+  subject: string;
+  htmlBody: string;
+  textBody?: string;
+}): Promise<{ success: boolean; message: string; method?: string; error?: string }> {
+  try {
+    const res = await fetch("/api/send-email", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+    if (res.ok) {
+      return await res.json();
+    }
+    const errObj = await res.json().catch(() => ({}));
+    return { 
+      success: false, 
+      message: errObj.error || "Failed to trigger email notification." 
+    };
+  } catch (err: any) {
+    console.error("sendEmailNotification error:", err);
+    return { success: false, message: err.message || "Network error sending email." };
+  }
+}
+
+export async function fetchEmailLogs(): Promise<ClientEmailLog[]> {
+  try {
+    const res = await fetch("/api/email-logs");
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch (err) {
+    console.error("fetchEmailLogs error:", err);
+  }
+  return [];
+}
+
+export async function clearEmailLogs(): Promise<boolean> {
+  try {
+    const res = await fetch("/api/email-logs/clear", { method: "POST" });
+    return res.ok;
+  } catch (err) {
+    console.error("clearEmailLogs error:", err);
+  }
+  return false;
+}

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Sun, 
@@ -32,7 +32,8 @@ import {
   Volume2,
   VolumeX,
   Sparkles,
-  AlertCircle
+  AlertCircle,
+  Shirt
 } from 'lucide-react';
 import { 
   getWeather, 
@@ -44,7 +45,10 @@ import {
   WeatherData, 
   DrynessInfo, 
   LocationResult,
-  ScheduleInfo
+  ScheduleInfo,
+  sendEmailNotification,
+  fetchEmailLogs,
+  clearEmailLogs
 } from './services/api';
 import SettingsModal, { AppSettings } from './components/SettingsModal';
 import SearchModal from './components/SearchModal';
@@ -159,6 +163,165 @@ const getWeatherStatus = (code: number) => {
   return map[code] || "Weather Activity";
 };
 
+// --- PREMIUM WEATHER BACKGROUND PARTICLE ENGINES & GRAPHICS ---
+
+const RainFallAnimation = () => {
+  const drops = Array.from({ length: 14 });
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+      {drops.map((_, idx) => {
+        const left = (idx * 7.5) + (Math.random() * 4);
+        const delay = Math.random() * 1.6;
+        const duration = 0.5 + Math.random() * 0.4;
+        const height = 12 + Math.random() * 16;
+        return (
+          <motion.div
+            key={idx}
+            initial={{ y: -45, opacity: 0 }}
+            animate={{ y: 320, opacity: [0, 0.7, 0.5, 0] }}
+            transition={{
+              duration: duration,
+              repeat: Infinity,
+              delay: delay,
+              ease: "linear"
+            }}
+            className="absolute bg-white/45 w-[1.5px] rounded-full"
+            style={{
+              left: `${left}%`,
+              height: `${height}px`,
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+};
+
+const SunnySparkleAnimation = () => {
+  const sparkles = Array.from({ length: 7 });
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+      <motion.div
+        animate={{ rotate: 360 }}
+        transition={{ duration: 40, repeat: Infinity, ease: "linear" }}
+        className="absolute -top-12 -right-12 w-72 h-72 rounded-full border border-amber-300/10 bg-gradient-to-br from-amber-300/20 to-transparent opacity-40 blur-lg"
+      />
+      {sparkles.map((_, idx) => {
+        const left = 20 + (idx * 11) + (Math.random() * 5);
+        const top = 15 + Math.random() * 60;
+        const delay = Math.random() * 1.8;
+        const duration = 1.3 + Math.random() * 1.2;
+        return (
+          <motion.div
+            key={idx}
+            animate={{
+              scale: [0, 1.15, 0],
+              opacity: [0, 0.8, 0],
+            }}
+            transition={{
+              duration: duration,
+              repeat: Infinity,
+              delay: delay,
+              ease: "easeInOut"
+            }}
+            className="absolute"
+            style={{
+              left: `${left}%`,
+              top: `${top}%`,
+            }}
+          >
+            <Sun className="w-2.5 h-2.5 text-amber-300 fill-amber-300/50" />
+          </motion.div>
+        );
+      })}
+    </div>
+  );
+};
+
+const CloudOvercastAnimation = () => {
+  return (
+    <div className="absolute inset-0 overflow-hidden pointer-events-none z-0 opacity-20">
+      <motion.div
+        initial={{ x: -140 }}
+        animate={{ x: 550 }}
+        transition={{ duration: 28, repeat: Infinity, ease: "linear" }}
+        className="absolute top-4 w-28 h-12 bg-white dark:bg-slate-300 rounded-full blur-sm"
+      />
+      <motion.div
+        initial={{ x: -220 }}
+        animate={{ x: 600 }}
+        transition={{ duration: 38, repeat: Infinity, ease: "linear", delay: 6 }}
+        className="absolute top-10 w-40 h-16 bg-white dark:bg-slate-400 rounded-full blur-md"
+      />
+    </div>
+  );
+};
+
+const ClotheslineSway = ({ windSpeed, isDancing }: { windSpeed: number; isDancing: boolean }) => {
+  // Translate windSpeed range (km/h) to active swing rotational angle
+  const angleOfSwing = Math.max(1.8, Math.min(18, windSpeed * 0.75));
+  const rateSpeed = windSpeed > 18 ? 0.45 : windSpeed > 10 ? 0.8 : 2.0;
+
+  return (
+    <div className="relative w-full h-28 flex flex-col items-center justify-center overflow-hidden mb-2 z-10">
+      {/* Cable string line overlay */}
+      <div className="absolute top-10 left-0 right-0 h-[1.5px] bg-white/40 dark:bg-slate-600/40" />
+      
+      {/* Dynamic Sway Anchor Body */}
+      <motion.div
+        animate={{
+          rotate: [-angleOfSwing, angleOfSwing, -angleOfSwing],
+          y: [0, -angleOfSwing * 0.25, 0],
+          skewX: [-angleOfSwing * 0.35, angleOfSwing * 0.35, -angleOfSwing * 0.35]
+        }}
+        transition={{
+          repeat: Infinity,
+          duration: rateSpeed,
+          ease: "easeInOut"
+        }}
+        className="relative flex flex-col items-center"
+        style={{ transformOrigin: "top" }}
+      >
+        {/* Support Clothespins Wooden pegs */}
+        <div className="flex gap-14 -mt-2.5 relative z-20">
+          <div className="w-1.5 h-3.5 bg-amber-700/80 rounded shadow-sm" />
+          <div className="w-1.5 h-3.5 bg-amber-700/80 rounded shadow-sm" />
+        </div>
+
+        {/* Laundry Item Core Custom SVG */}
+        <svg viewBox="0 0 120 100" className="w-[74px] h-[74px] drop-shadow-md cursor-pointer select-none" fill="currentColor">
+          <path d="M 30,15 
+                   C 40,25 50,25 60,15 
+                   C 70,25 80,25 90,15 
+                   L 115,26 
+                   C 118,29 115,34 110,31
+                   L 100,25
+                   L 100,80
+                   C 100,85 95,90 90,90
+                   L 30,90
+                   C 25,90 20,85 20,80
+                   L 20,25
+                   L 10,31
+                   C 5,34 2,29 5,26
+                   Z" 
+                className={`${isDancing ? 'fill-sky-100 dark:fill-indigo-900 border-2' : 'fill-white/80 dark:fill-indigo-300/85'} stroke-slate-200/50 dark:stroke-slate-900`}
+          />
+          <circle cx="60" cy="50" r="11" className="fill-blue-500/10 stroke-blue-400/40 stroke-[1.5px]" />
+          <path d="M 54,50 Q 60,42 66,50" fill="none" className="stroke-blue-400 stroke-2" />
+          <path d="M 52,50 Q 60,58 68,50" fill="none" className="stroke-amber-400 stroke-[1.5px]" />
+        </svg>
+
+        {/* Tiny Wind Status string */}
+        <div className="absolute -bottom-2.5 text-[7px] tracking-wider font-bold uppercase text-white bg-black/30 dark:bg-black/60 px-1.5 py-0.5 rounded-full backdrop-blur-sm shadow-sm scale-90 border border-white/5">
+          {windSpeed > 18 ? "⚠️ GALE VENT" : windSpeed > 10 ? "🍃 ACTIVE DRY" : "☀️ CALM"}
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+// --- END OF PREMIUM BACKDROP ENGINES ---
+
 export default function App() {
   const [coords, setCoords] = useState<{ lat: number; lon: number } | null>(null);
   const [locationName, setLocationName] = useState<string>("Detecting...");
@@ -173,6 +336,83 @@ export default function App() {
   const [nowTicker, setNowTicker] = useState(Date.now());
   const [alarmActive, setAlarmActive] = useState(false);
   const [alarmMuted, setAlarmMuted] = useState(false);
+  const [isDryingComplete, setIsDryingComplete] = useState(false);
+  const [completeAlarmActive, setCompleteAlarmActive] = useState(false);
+  const [alarmRingtone, setAlarmRingtone] = useState<string>(() => {
+    return localStorage.getItem("laundry_alarm_ringtone") || "standard";
+  });
+  const [customFileAudioUrl, setCustomFileAudioUrl] = useState<string | null>(null);
+  const customAudioRef = useRef<HTMLAudioElement | null>(null);
+  const [emailLogsList, setEmailLogsList] = useState<any[]>([]);
+
+  // Premium Custom Fabric Type
+  const [fabricType, setFabricType] = useState<'cotton' | 'delicate' | 'heavy'>(() => {
+    return (localStorage.getItem("laundry_fabric_type") as any) || "cotton";
+  });
+
+  // Premium Voice over Speech settings
+  const [voiceEnabled, setVoiceEnabled] = useState<boolean>(() => {
+    return localStorage.getItem("laundry_voice_enabled") !== "false";
+  });
+  const [voiceGender, setVoiceGender] = useState<'female' | 'male' | 'natural'>(() => {
+    return (localStorage.getItem("laundry_voice_gender") as any) || "female";
+  });
+  const [voiceRate, setVoiceRate] = useState<number>(() => {
+    const r = parseFloat(localStorage.getItem("laundry_voice_rate") || "1.0");
+    return isNaN(r) ? 1.0 : r;
+  });
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
+  // Custom Premium AI Voice Player
+  const playWithCustomVoice = useCallback((textStr: string) => {
+    if (!voiceEnabled) return;
+    try {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+        
+        // Remove HTML tags for perfect speech synthesis vocalizing
+        const cleanText = textStr.replace(/<\/?[^>]+(>|$)/g, "")
+                                 .replace(/&nbsp;/g, " ")
+                                 .replace(/🎉|⚠️|🧺|☀️|🌧️|🌱|🌡️|🌪️/g, ""); // strip emojis for crystal clear sound
+        
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        const availableVoices = window.speechSynthesis.getVoices();
+        
+        // Look up top professional voice options
+        let selectedVoice = null;
+        if (voiceGender === 'female') {
+          selectedVoice = availableVoices.find(v => 
+            v.name.includes("Google US English") || 
+            v.name.includes("Samantha") || 
+            v.name.includes("Zira") || 
+            v.name.toLowerCase().includes("female")
+          );
+        } else if (voiceGender === 'male') {
+          selectedVoice = availableVoices.find(v => 
+            v.name.includes("Google UK English Male") || 
+            v.name.includes("David") || 
+            v.name.includes("Mark") || 
+            v.name.toLowerCase().includes("male")
+          );
+        }
+        
+        if (selectedVoice) {
+          utterance.voice = selectedVoice;
+        }
+        
+        utterance.rate = voiceRate;
+        utterance.pitch = voiceGender === 'female' ? 1.05 : voiceGender === 'male' ? 0.95 : 1.0;
+        
+        utterance.onstart = () => setIsSpeaking(true);
+        utterance.onend = () => setIsSpeaking(false);
+        utterance.onerror = () => setIsSpeaking(false);
+        
+        window.speechSynthesis.speak(utterance);
+      }
+    } catch (e) {
+      console.warn("Speech Synthesis failed to vocalize:", e);
+    }
+  }, [voiceEnabled, voiceGender, voiceRate]);
   
   // Synthesizer Audio alarm refs
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -213,6 +453,132 @@ export default function App() {
 
   const [now, setNow] = useState(Date.now());
   const [unhandledError, setUnhandledError] = useState<string | null>(null);
+
+  // Demo audio variables
+  const [isPlayingDemo, setIsPlayingDemo] = useState(false);
+  const demoAudioCtxRef = useRef<AudioContext | null>(null);
+  const demoIntervalRef = useRef<any>(null);
+  const demoCustomAudioRef = useRef<HTMLAudioElement | null>(null);
+
+  const stopDemoPlayback = useCallback(() => {
+    setIsPlayingDemo(false);
+    if (demoCustomAudioRef.current) {
+      demoCustomAudioRef.current.pause();
+      demoCustomAudioRef.current.currentTime = 0;
+    }
+    if (demoIntervalRef.current) {
+      clearInterval(demoIntervalRef.current);
+      demoIntervalRef.current = null;
+    }
+  }, []);
+
+  const startDemoPlayback = () => {
+    if (alarmRingtone === "custom" && customFileAudioUrl) {
+      demoCustomAudioRef.current = new Audio(customFileAudioUrl);
+      demoCustomAudioRef.current.play().catch(e => console.warn("Demo blocked by sandbox:", e));
+      setTimeout(stopDemoPlayback, 4000);
+      return;
+    }
+
+    if (!demoAudioCtxRef.current) {
+      demoAudioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    const ctx = demoAudioCtxRef.current;
+    if (ctx.state === "suspended") {
+      ctx.resume();
+    }
+
+    const playSnippet = () => {
+      const now = ctx.currentTime;
+      if (alarmRingtone === "siren") {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = "sawtooth";
+        osc.frequency.setValueAtTime(450, now);
+        osc.frequency.exponentialRampToValueAtTime(1100, now + 0.35);
+        osc.frequency.exponentialRampToValueAtTime(450, now + 0.7);
+        gain.gain.setValueAtTime(0.12, now);
+        gain.gain.setValueAtTime(0.12, now + 0.6);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.7);
+        osc.start(now);
+        osc.stop(now + 0.75);
+      } else if (alarmRingtone === "beeps") {
+        const playShortPip = (timeOffset: number) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(1750, now + timeOffset);
+          gain.gain.setValueAtTime(0.15, now + timeOffset);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + timeOffset + 0.1);
+          osc.start(now + timeOffset);
+          osc.stop(now + timeOffset + 0.12);
+        };
+        playShortPip(0);
+        playShortPip(0.15);
+        playShortPip(0.3);
+      } else if (alarmRingtone === "bell") {
+        const freqs = [523.25, 659.25, 783.99, 1046.5];
+        const gainNode = ctx.createGain();
+        gainNode.connect(ctx.destination);
+        gainNode.gain.setValueAtTime(0.2, now);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
+        freqs.forEach(f => {
+          const osc = ctx.createOscillator();
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(f, now);
+          osc.connect(gainNode);
+          osc.start(now);
+          osc.stop(now + 1.3);
+        });
+      } else {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.type = "sine";
+        osc.frequency.setValueAtTime(1250, now);
+        gain.gain.setValueAtTime(0.2, now);
+        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+        osc.start(now);
+        osc.stop(now + 0.55);
+      }
+    };
+
+    playSnippet();
+    const intervalMs = alarmRingtone === "bell" ? 1500 : alarmRingtone === "siren" ? 900 : 800;
+    demoIntervalRef.current = setInterval(playSnippet, intervalMs);
+
+    setTimeout(stopDemoPlayback, 4000);
+  };
+
+  const handleToggleDemoPlay = () => {
+    if (isPlayingDemo) {
+      stopDemoPlayback();
+    } else {
+      setIsPlayingDemo(true);
+      startDemoPlayback();
+    }
+  };
+
+  const handleCustomAudioUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const url = URL.createObjectURL(file);
+      setCustomFileAudioUrl(url);
+      setAlarmRingtone("custom");
+      localStorage.setItem("laundry_alarm_ringtone", "custom");
+      
+      setAiFeed(prev => [...prev, {
+        speaker: 'ai',
+        text: `🎵 Device alarm tone <b>${file.name}</b> loaded successfully! Standard ringtone is updated.`,
+        time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      }]);
+    }
+  };
 
   useEffect(() => {
     const isBenignError = (errStr: string) => {
@@ -267,6 +633,17 @@ export default function App() {
 
   const theme = getTheme(weather);
 
+  // Synchronize document.documentElement and body styles for bulletproof dark-theme utility resolution
+  useEffect(() => {
+    if (theme.isDark) {
+      document.documentElement.classList.add('dark');
+      document.body.style.backgroundColor = '#0b1329'; // High-contrast deep slate navy background
+    } else {
+      document.documentElement.classList.remove('dark');
+      document.body.style.backgroundColor = '#f8fafc'; // Elegant clean slate slate-50 background
+    }
+  }, [theme.isDark]);
+
   // Initialize from localStorage
   useEffect(() => {
     const savedState = safeLocalStorage.getItem('laundry_guard_state');
@@ -285,6 +662,9 @@ export default function App() {
         }
         if (parsed.settings) {
           setAppSettings({ enableAI: true, ...parsed.settings });
+          if (parsed.settings.voiceEnabled !== undefined) setVoiceEnabled(parsed.settings.voiceEnabled);
+          if (parsed.settings.voiceGender) setVoiceGender(parsed.settings.voiceGender);
+          if (parsed.settings.voiceRate !== undefined) setVoiceRate(parsed.settings.voiceRate);
         }
       } catch (e) {
         console.error("Failed to parse saved state");
@@ -513,6 +893,8 @@ export default function App() {
       setCustomTimerDuration(null);
       setPendingTimerDuration(null);
       setAlarmMuted(false);
+      setIsDryingComplete(false);
+      setCompleteAlarmActive(false);
     } else {
       setIsDrying(false);
       setStartTime(null);
@@ -520,6 +902,8 @@ export default function App() {
       setCustomTimerDuration(null);
       setPendingTimerDuration(null);
       setAlarmMuted(false);
+      setIsDryingComplete(false);
+      setCompleteAlarmActive(false);
     }
   };
 
@@ -538,60 +922,287 @@ export default function App() {
     };
   }, [isDrying]);
 
-  // Dual-oscillator programmatic Web Audio alarm chime
+  // Sync email logs utility
+  const syncEmailLogs = useCallback(async () => {
+    const logs = await fetchEmailLogs();
+    setEmailLogsList(logs);
+  }, []);
+
+  // Fetch email logs on mount and when settings open
+  useEffect(() => {
+    syncEmailLogs();
+  }, [showSettings, syncEmailLogs]);
+
+  const hasSentRainAlertEmail = useRef(false);
+
+  // Reset sent flag when user starts drying laundry
+  useEffect(() => {
+    if (isDrying) {
+      hasSentRainAlertEmail.current = false;
+    }
+  }, [isDrying]);
+
+  // Rain danger email dispatcher & Vocalizer Warning
   useEffect(() => {
     const isDangerousRain = getRainAlert()?.level === 'danger';
+    if (isDrying && isDangerousRain && !hasSentRainAlertEmail.current) {
+      hasSentRainAlertEmail.current = true;
+
+      // Vocal Warning Announcement
+      playWithCustomVoice("⚠️ Urgent Warning! Rain detected in your drying zone. Please collect your laundry immediately!");
+
+      // Trigger email alert
+      if (appSettings.emailNotifications && appSettings.emailAddress) {
+        const alertMsg = getRainAlert()?.message || "Rain detected!";
+        sendEmailNotification({
+          to: appSettings.emailAddress,
+          subject: "⚠️ [Laundry Guard] URGENT Rain Alert!",
+          htmlBody: `
+            <div style="font-family: sans-serif; padding: 24px; border: 2px solid #ef4444; border-radius: 16px; max-width: 500px; background-color: #fef2f2; box-shadow: 0 4px 12px rgba(239, 68, 68, 0.1);">
+              <h2 style="color: #ef4444; margin-top: 0; font-size: 20px; display: flex; align-items: center; gap: 8px;">🌧️ URGENT: Collect Clothes Immediately!</h2>
+              <p style="font-size: 14px; color: #1e293b; line-height: 1.5;">Our atmospheric sensor has detected immediate weather hazards in your drying location.</p>
+              <div style="background-color: #ffffff; padding: 14px; border-radius: 8px; margin: 16px 0; border: 1px solid #fee2e2;">
+                <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #334155;">
+                  <li style="margin-bottom: 6px;"><strong>Warning Status:</strong> ${alertMsg}</li>
+                  <li style="margin-bottom: 6px;"><strong>Region Name:</strong> ${locationName || 'Your Geo-Location'}</li>
+                  <li style="margin-bottom: 6px;"><strong>Real-time intensity:</strong> ${weather?.current?.precipitation || 0} mm/h</li>
+                  <li><strong>Guidance:</strong> Bring clothes indoors to avoid getting wet.</li>
+                </ul>
+              </div>
+              <p style="color: #64748b; font-size: 11px; margin-top: 20px; border-top: 1px solid #fee2e2; padding-top: 12px;">You are receiving this safe automation dispatch because you enabled live rainfall notifications on Laundry Guard.</p>
+            </div>
+          `,
+          textBody: `⚠️ URGENT Laundry Guard Rain Alert! Rain has started at ${locationName || 'your location'} (${alertMsg}). Collect your clothes immediately!`
+        }).then((res) => {
+          console.log("Rain threat email notification dispatched:", res);
+          syncEmailLogs();
+        });
+      }
+    }
+  }, [isDrying, weather, appSettings, locationName, syncEmailLogs, playWithCustomVoice]);
+
+  // Automated timer finish checker (Drying Complete Alarm and Email Dispatcher)
+  useEffect(() => {
+    if (!isDrying || !startTime) return;
     
-    if (isDrying && isDangerousRain && !alarmMuted) {
-      setAlarmActive(true);
+    const checkFinish = () => {
+      let baseMinutes = customTimerDuration !== null ? customTimerDuration : (dryness?.estimatedMinutes || 180);
       
-      if (!alarmIntervalRef.current) {
-        try {
-          if (!audioCtxRef.current) {
-            audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
-          }
-          const ctx = audioCtxRef.current;
-          if (ctx.state === "suspended") {
-            ctx.resume();
-          }
+      // Dynamic fabric coefficients multiplier
+      if (fabricType === 'delicate') {
+        baseMinutes = Math.round(baseMinutes * 0.7);
+      } else if (fabricType === 'heavy') {
+        baseMinutes = Math.round(baseMinutes * 1.4);
+      }
+
+      const totalMinutes = baseMinutes + customMinutesOffset;
+      const totalSecondsRequired = totalMinutes * 60;
+      const elapsedSeconds = Math.floor((Date.now() - startTime) / 1000);
+      const secondsRemaining = Math.max(0, totalSecondsRequired - elapsedSeconds);
+      
+      if (secondsRemaining <= 0) {
+        // Timer has ended!
+        setIsDrying(false);
+        setStartTime(null);
+        setCustomTimerDuration(null);
+        setPendingTimerDuration(null);
+        setIsDryingComplete(true);
+        setCompleteAlarmActive(true);
+        setAlarmMuted(false); // Make sure alarm rings
+
+        // Vocal alert trigger on finish
+        playWithCustomVoice("🧺 Attention! Drying cycle completed. Your clothes are fully dry and fresh. Please collect them!");
+        
+        // Notify voice assistant feed
+        setAiFeed(prev => [...prev, {
+          speaker: 'ai',
+          text: "🎉 <b>Drying Complete!</b> Your laundry is perfectly dried. Alarm is ringing!",
+          time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        }]);
+
+        // Trigger email notification if enabled
+        if (appSettings.emailNotifications && appSettings.emailAddress) {
+          sendEmailNotification({
+            to: appSettings.emailAddress,
+            subject: "🧺 [Laundry Guard] Drying Complete Alert!",
+            htmlBody: `
+              <div style="font-family: sans-serif; padding: 24px; border: 2px solid #10b981; border-radius: 16px; max-width: 500px; background-color: #f0fdf4; box-shadow: 0 4px 12px rgba(16, 185, 129, 0.1);">
+                <h2 style="color: #10b981; margin-top: 0; font-size: 20px;">🧺 Custom Timer Finished!</h2>
+                <p style="font-size: 14px; color: #1e293b; line-height: 1.5;">Your outdoor clothes drying monitor has successfully ended its calculated evaporation cycle.</p>
+                <div style="background-color: #ffffff; padding: 14px; border-radius: 8px; margin: 16px 0; border: 1px solid #dcfce7;">
+                  <ul style="margin: 0; padding-left: 20px; font-size: 13px; color: #334155;">
+                    <li style="margin-bottom: 6px;"><strong>Setup duration:</strong> ${totalMinutes} minutes</li>
+                    <li style="margin-bottom: 6px;"><strong>Fabric Type:</strong> ${fabricType.toUpperCase()}</li>
+                    <li style="margin-bottom: 6px;"><strong>Location name:</strong> ${locationName || 'Your Geo-Location'}</li>
+                    <li><strong>Status code:</strong> Completed successfully</li>
+                  </ul>
+                </div>
+                <p style="color: #64748b; font-size: 11px; margin-top: 20px; border-top: 1px solid #dcfce7; padding-top: 12px;">You are receiving this because you enabled email notifications on Laundry Guard.</p>
+              </div>
+            `,
+            textBody: `🧺 Laundry Guard Alert: Your outdoor laundry timer of ${totalMinutes}m (${fabricType}) has finished drying successfully at ${locationName || 'your location'}!`
+          }).then((res) => {
+            console.log("Drying complete email sent:", res);
+            syncEmailLogs();
+          });
+        }
+      }
+    };
+
+    const timerId = setInterval(checkFinish, 1000);
+    return () => clearInterval(timerId);
+  }, [isDrying, startTime, customTimerDuration, customMinutesOffset, dryness, appSettings, locationName, fabricType, syncEmailLogs, playWithCustomVoice]);
+
+  // Web Audio chime model with selected Alarm Ringtone and device file player
+  useEffect(() => {
+    const isDangerousRain = getRainAlert()?.level === 'danger';
+    const isRainAlertTriggered = isDrying && isDangerousRain;
+    const isCompleteAlertTriggered = completeAlarmActive;
+
+    const startSoundEngine = () => {
+      // If custom uploaded audio
+      if (alarmRingtone === "custom" && customFileAudioUrl) {
+        if (!customAudioRef.current) {
+          customAudioRef.current = new Audio(customFileAudioUrl);
+          customAudioRef.current.loop = true;
+        }
+        customAudioRef.current.play().catch(e => console.warn("Audio blocked by browser sandbox:", e));
+        return;
+      }
+
+      // Initialize sound context
+      if (!audioCtxRef.current) {
+        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+      }
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") {
+        ctx.resume();
+      }
+
+      const playSynthBeep = () => {
+        const now = ctx.currentTime;
+        
+        if (alarmRingtone === "siren") {
+          // Cyber Siren: sweep frequencies
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
           
-          const playBeep = () => {
+          osc.type = "sawtooth";
+          osc.frequency.setValueAtTime(450, now);
+          osc.frequency.exponentialRampToValueAtTime(1100, now + 0.35);
+          osc.frequency.exponentialRampToValueAtTime(450, now + 0.7);
+          
+          gain.gain.setValueAtTime(0.15, now);
+          gain.gain.setValueAtTime(0.15, now + 0.6);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.7);
+          
+          osc.start(now);
+          osc.stop(now + 0.75);
+        } else if (alarmRingtone === "beeps") {
+          // Echo Beeps: fast high pitch pulses
+          const playShortPip = (timeOffset: number) => {
             const osc = ctx.createOscillator();
             const gain = ctx.createGain();
             osc.connect(gain);
             gain.connect(ctx.destination);
             
-            osc.frequency.value = 950;
             osc.type = "sine";
+            osc.frequency.setValueAtTime(isRainAlertTriggered ? 2300 : 1700, now + timeOffset);
+            gain.gain.setValueAtTime(0.2, now + timeOffset);
+            gain.gain.exponentialRampToValueAtTime(0.01, now + timeOffset + 0.1);
             
-            gain.gain.setValueAtTime(0.3, ctx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.35);
-            
-            osc.start();
-            osc.stop(ctx.currentTime + 0.4);
+            osc.start(now + timeOffset);
+            osc.stop(now + timeOffset + 0.12);
           };
           
-          playBeep();
-          alarmIntervalRef.current = setInterval(playBeep, 1200);
-        } catch (e) {
-          console.warn("Could not kick off Web Audio synth:", e);
+          playShortPip(0);
+          playShortPip(0.15);
+          playShortPip(0.3);
+        } else if (alarmRingtone === "bell") {
+          // Traditional resonant bell chime
+          const freqs = isRainAlertTriggered ? [440, 554, 659, 880] : [523.25, 659.25, 783.99, 1046.5];
+          const gainNode = ctx.createGain();
+          gainNode.connect(ctx.destination);
+          gainNode.gain.setValueAtTime(0.25, now);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, now + 1.2);
+
+          freqs.forEach(f => {
+            const osc = ctx.createOscillator();
+            osc.type = "sine";
+            osc.frequency.setValueAtTime(f, now);
+            osc.connect(gainNode);
+            osc.start(now);
+            osc.stop(now + 1.3);
+          });
+        } else {
+          // Standard Chime: Clean resonant beep
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          
+          osc.type = "sine";
+          osc.frequency.setValueAtTime(isRainAlertTriggered ? 950 : 1250, now);
+          gain.gain.setValueAtTime(0.3, now);
+          gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+          
+          osc.start(now);
+          osc.stop(now + 0.55);
         }
+      };
+
+      playSynthBeep();
+      const intervalMs = alarmRingtone === "bell" ? 1500 : alarmRingtone === "siren" ? 900 : 800;
+      alarmIntervalRef.current = setInterval(playSynthBeep, intervalMs);
+    };
+
+    const stopSoundEngine = () => {
+      if (customAudioRef.current) {
+        customAudioRef.current.pause();
+        customAudioRef.current.currentTime = 0;
       }
-    } else {
-      setAlarmActive(false);
-      if (alarmIntervalRef.current) {
-        clearInterval(alarmIntervalRef.current);
-        alarmIntervalRef.current = null;
-      }
-    }
-    
-    return () => {
       if (alarmIntervalRef.current) {
         clearInterval(alarmIntervalRef.current);
         alarmIntervalRef.current = null;
       }
     };
-  }, [isDrying, weather, alarmMuted]);
+
+    if ((isRainAlertTriggered || isCompleteAlertTriggered) && !alarmMuted) {
+      setAlarmActive(true);
+      if (!alarmIntervalRef.current) {
+        try {
+          startSoundEngine();
+        } catch (e) {
+          console.warn("Error starting sound generator:", e);
+        }
+      }
+    } else {
+      setAlarmActive(false);
+      stopSoundEngine();
+    }
+
+    return () => {
+      stopSoundEngine();
+    };
+  }, [isDrying, weather, alarmMuted, completeAlarmActive, alarmRingtone, customFileAudioUrl]);
+
+  // Task 4: Auto-refresh weather (precip + hourly) every 5 minutes automatically
+  useEffect(() => {
+    let refreshInterval: any = null;
+    
+    refreshInterval = setInterval(() => {
+      if (coords) {
+        console.log("[Auto-Refresh] Automatically refreshing live weather and precipitation data...");
+        updateWeatherAndDryness(true);
+      }
+    }, 5 * 60 * 1000); // 5 minutes (300,000 ms)
+
+    return () => {
+      if (refreshInterval) clearInterval(refreshInterval);
+    };
+  }, [coords, updateWeatherAndDryness]);
 
   // AI voice processing caller
   const runVoiceCommandInput = (text: string) => {
@@ -599,7 +1210,12 @@ export default function App() {
     setAiProcessing(true);
     setAiFeed(prev => [...prev, { speaker: 'user', text, time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) }]);
     
-    const baseMinutes = customTimerDuration !== null ? customTimerDuration : (dryness?.estimatedMinutes || 180);
+    // Adjust base calculation factor based on selected fabric type 
+    let base = dryness?.estimatedMinutes || 180;
+    if (fabricType === 'delicate') base = Math.round(base * 0.7);
+    else if (fabricType === 'heavy') base = Math.round(base * 1.4);
+    
+    const baseMinutes = customTimerDuration !== null ? customTimerDuration : base;
     const elapsedSeconds = startTime ? Math.floor((Date.now() - startTime) / 1000) : 0;
     const timeLeft = Math.max(0, baseMinutes + customMinutesOffset - Math.floor(elapsedSeconds / 60));
     const hasRainAlarm = getRainAlert()?.level === 'danger';
@@ -653,15 +1269,7 @@ export default function App() {
         setCustomMinutesOffset(prev => prev + res.adjustMinutes);
       }
       
-      try {
-        if ('speechSynthesis' in window) {
-          window.speechSynthesis.cancel();
-          const utterance = new SpeechSynthesisUtterance(res.responseSpeech);
-          window.speechSynthesis.speak(utterance);
-        }
-      } catch (speechErr) {
-        console.warn("Speech Synthesis failed:", speechErr);
-      }
+      playWithCustomVoice(res.responseSpeech);
     }).catch((apiErr) => {
       setAiProcessing(false);
       console.error(apiErr);
@@ -843,7 +1451,7 @@ export default function App() {
   }
 
   return (
-    <div className={`max-w-md mx-auto min-h-screen ${theme.bg} relative pb-28 transition-colors duration-1000 overflow-x-hidden`}>
+    <div className={`max-w-md mx-auto min-h-screen ${theme.bg} ${theme.isDark ? 'dark' : ''} relative pb-28 transition-colors duration-1000 overflow-x-hidden`}>
       {/* Header */}
       <header className="px-6 pt-12 pb-4 flex justify-between items-start">
         <div className="flex-1">
@@ -887,50 +1495,178 @@ export default function App() {
       </header>
 
       <main className="px-6 space-y-6">
+        {/* Drying Complete Interactive Alarm Alert Panel */}
+        {completeAlarmActive && (
+          <div className="p-4 bg-emerald-500 text-white dark:bg-emerald-950/45 border border-emerald-400 dark:border-emerald-800 rounded-3xl flex items-center justify-between gap-3 animate-bounce shadow-lg shadow-emerald-100 dark:shadow-none">
+            <div className="flex items-center gap-2.5">
+              <CheckCircle2 className="w-6 h-6 shrink-0 text-white dark:text-emerald-400 animate-pulse" />
+              <div>
+                <div className="font-bold text-xs uppercase tracking-wider text-white">Drying Completed!</div>
+                <p className="text-[10px] opacity-95 leading-tight">Your clothes are dry. Ringtone alarm active!</p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setAlarmMuted(true);
+                setCompleteAlarmActive(false);
+                setIsDryingComplete(false);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-white text-emerald-700 hover:bg-emerald-50 rounded-xl text-[10px] font-bold uppercase transition-all shadow-sm shrink-0"
+            >
+              <VolumeX className="w-3.5 h-3.5" />
+              Stop Alarm
+            </button>
+          </div>
+        )}
+
         {/* Connection Failure or No Data */}
         {error && !weather && errorContent}
 
-        {/* Forecast Card */}
-        {weather && (
-          <section className={`p-6 rounded-3xl overflow-hidden relative shadow-lg transition-all duration-500 ${
-            weatherAlert?.level === 'danger' ? 'bg-rose-500 text-white shadow-rose-200' : 
-            weatherAlert?.level === 'warning' ? 'bg-amber-400 text-slate-900 shadow-amber-200' : 
-            theme.isDark ? 'bg-slate-800 text-indigo-400 border border-slate-700 shadow-indigo-900/20' : theme.accent + ' text-white shadow-blue-200'
-          }`}>
-            <div className="relative z-10">
-              <div className="flex justify-between items-start mb-4">
-                <span className={`text-xs font-bold uppercase tracking-widest opacity-80 ${theme.isDark ? 'bg-white/5 text-slate-400' : 'bg-black/10 text-white'} px-2.5 py-1 rounded-full flex items-center gap-1.5`}>
-                   {isFetchingWeather ? 'Syncing...' : (weather ? getWeatherStatus(weather.current.weather_code) : 'Local Skies')}
-                </span>
-                {isFetchingWeather ? <Loader2 className="w-5 h-5 animate-spin opacity-50" /> : <CheckCircle2 className="w-5 h-5" />}
-              </div>
+         {/* Animated Climate Companion Hero Screen */}
+        {weather && (() => {
+          const code = weather.current.weather_code;
+          const isRaining = code >= 51 && code <= 69 || code >= 80 && code <= 82 || code >= 95;
+          const isOvercast = code === 2 || code === 3 || code === 45 || code === 48;
+          const isClear = code <= 1;
+          const currentWind = weather.current.wind_speed_10m ?? 0;
+
+          // Solar UV calculations based on cloud cover percentage
+          const cloudPercent = weather.current.cloud_cover ?? 0;
+          let uvIndex = "Moderate (III)";
+          if (cloudPercent < 20) uvIndex = "Extreme (IX+)";
+          else if (cloudPercent < 50) uvIndex = "High (VI)";
+          else if (cloudPercent > 80) uvIndex = "Fragile (I)";
+
+          // Evaporation performance metric
+          const hum = weather.current.relative_humidity_2m ?? 50;
+          let evapPerf = "Optimum Dry Speed (26%/hr)";
+          if (hum > 75) evapPerf = "Stagnant Damp (8%/hr)";
+          else if (hum > 55) evapPerf = "Moderate Evap (14%/hr)";
+
+          return (
+            <motion.section 
+              initial={{ opacity: 0, y: 30, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              transition={{ type: "spring", stiffness: 90, damping: 15 }}
+              whileHover={{ y: -3 }}
+              className={`rounded-3xl overflow-hidden relative shadow-xl border transition-all duration-500 flex flex-col ${
+                theme.isDark 
+                  ? 'bg-slate-900 border-slate-800 shadow-indigo-950/20 text-slate-100' 
+                  : 'bg-white border-slate-100/80 shadow-slate-200/40 text-slate-800'
+              }`}
+            >
               
-              <div className="space-y-1">
-                <h2 className={`text-4xl font-display font-bold ${weatherAlert ? '' : (theme.isDark ? 'text-indigo-400' : 'text-white')}`}>
-                  {weatherAlert?.level === 'danger' ? 'Rain Alert!' : weatherAlert?.level === 'warning' ? 'Warning' : dryness?.statusText || 'Perfect Sky'}
-                </h2>
-                <p className={`text-lg opacity-90 leading-tight font-medium max-w-[85%] ${weatherAlert ? '' : (theme.isDark ? 'text-slate-400' : 'text-white')}`}>
-                  {weatherAlert?.message || "Skies look great. It's safe to hang your laundry outside."}
-                </p>
+              {/* Dynamic Weather Sky Layer Animation */}
+              <div className={`p-6 relative overflow-hidden flex flex-col justify-between min-h-[290px] border-b ${
+                theme.isDark ? 'border-slate-800/80' : 'border-slate-100'
+              } ${
+                weatherAlert?.level === 'danger' ? 'bg-gradient-to-br from-rose-500/10 to-transparent' :
+                weatherAlert?.level === 'warning' ? 'bg-gradient-to-br from-amber-400/10 to-transparent' :
+                'bg-gradient-to-br from-blue-500/5 to-transparent'
+              }`}>
+                {/* Immersive Shifting Atmospheric Aura backdrop */}
+                <motion.div
+                  animate={{
+                    scale: [1, 1.12, 0.93, 1],
+                    x: [0, 18, -12, 0],
+                    y: [0, -12, 18, 0],
+                  }}
+                  transition={{
+                    repeat: Infinity,
+                    duration: 18,
+                    ease: "easeInOut",
+                  }}
+                  className={`absolute inset-0 opacity-40 blur-3xl pointer-events-none bg-gradient-to-tr ${
+                    theme.isDark
+                      ? 'from-indigo-600/10 via-slate-900/0 to-emerald-500/10'
+                      : 'from-amber-400/10 via-blue-200/5 to-sky-400/15'
+                  }`}
+                />
+                {/* Weather Particle Backdrop Overlays */}
+                {isRaining && <RainFallAnimation />}
+                {isClear && <SunnySparkleAnimation />}
+                {isOvercast && <CloudOvercastAnimation />}
+
+                {/* Sky header controls */}
+                <div className="flex justify-between items-start relative z-10 w-full mb-2">
+                  <span className={`text-[10px] font-bold uppercase tracking-widest px-2.5 py-1 rounded-full flex items-center gap-1.5 backdrop-blur-md shadow-sm border ${
+                    weatherAlert?.level === 'danger' ? 'bg-rose-500/20 text-rose-600 dark:text-rose-400 border-rose-500/30' :
+                    weatherAlert?.level === 'warning' ? 'bg-amber-400/20 text-amber-600 dark:text-amber-400 border-amber-500/30' :
+                    'bg-slate-500/10 text-slate-600 dark:text-slate-400 border-slate-500/10'
+                  }`}>
+                    <span className="relative flex h-1.5 w-1.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-blue-500"></span>
+                    </span>
+                    {weather ? getWeatherStatus(weather.current.weather_code) : 'Atmosphere Monitor'}
+                  </span>
+
+                  <span className="text-[9px] font-mono tracking-wider font-bold text-slate-400 uppercase bg-slate-500/5 px-2 py-0.5 rounded-md border border-slate-500/5">
+                    Live Simulator
+                  </span>
+                </div>
+
+                {/* Animated Clothesline Sway Graphics Module */}
+                <ClotheslineSway windSpeed={currentWind} isDancing={isDrying} />
+
+                {/* Drying core conditions info */}
+                <div className="relative z-10 space-y-1.5 mt-2">
+                  <div className="flex justify-between items-end">
+                    <div>
+                      <h2 className="text-3xl font-display font-bold tracking-tight text-slate-800 dark:text-white">
+                        {weatherAlert?.level === 'danger' ? 'Rain Imminent!' : weatherAlert?.level === 'warning' ? 'Hazards Predicted' : dryness?.statusText || 'Perfect Drying'}
+                      </h2>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 font-medium leading-relaxed max-w-[90%]">
+                        {weatherAlert?.message || "Atmosphere looks secure. Optimal window to clean and hang clothes."}
+                      </p>
+                    </div>
+
+                    <div className="text-right">
+                      <div className="text-3xl font-display font-extrabold text-blue-600 dark:text-indigo-400">{weather.current?.temperature_2m ?? '--'}°</div>
+                      <div className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Outdoor Skies</div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div className="mt-8 flex gap-3">
-                <div className={`flex items-center gap-2 ${theme.isDark ? 'bg-slate-900/50 text-indigo-400 border-slate-700' : 'bg-white/20 text-white border-white/10'} px-3 py-2 rounded-xl backdrop-blur-md border`}>
-                  <Thermometer className="w-4 h-4" />
-                  <span className="font-bold">{weather.current?.temperature_2m ?? '--'}°</span>
+              {/* Advanced Atmospheric Metering Panel (Famous Care Apps Option) */}
+              <div className={`p-4 ${
+                theme.isDark ? 'bg-slate-900/60' : 'bg-slate-50/50'
+              } grid grid-cols-3 gap-2.5 text-center`}>
+                <div className={`p-2.5 rounded-2xl border ${
+                  theme.isDark ? 'bg-slate-950/40 border-slate-800/80' : 'bg-white border-slate-100/80 shadow-sm'
+                }`}>
+                  <div className="flex items-center justify-center gap-1 text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
+                    <Sun className="w-3 h-3 text-amber-500" /> UV Rate Index
+                  </div>
+                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{uvIndex}</div>
+                  <div className="text-[7.5px] text-slate-400 font-medium mt-0.5">Evap core radiation</div>
                 </div>
-                <div className={`flex items-center gap-2 ${theme.isDark ? 'bg-slate-900/50 text-indigo-400 border-slate-700' : 'bg-white/20 text-white border-white/10'} px-3 py-2 rounded-xl backdrop-blur-md border`}>
-                  <Droplets className="w-4 h-4" />
-                  <span className="font-bold">{weather.current?.relative_humidity_2m ?? '--'}%</span>
+
+                <div className={`p-2.5 rounded-2xl border ${
+                  theme.isDark ? 'bg-slate-950/40 border-slate-800/80' : 'bg-white border-slate-100/80 shadow-sm'
+                }`}>
+                  <div className="flex items-center justify-center gap-1 text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
+                    <Wind className="w-3 h-3 text-sky-500 animate-spin" style={{ animationDuration: '6s' }} /> Wind Uplift
+                  </div>
+                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{currentWind} km/h</div>
+                  <div className="text-[7.5px] text-slate-400 font-medium mt-0.5">Mechanical fiber shake</div>
+                </div>
+
+                <div className={`p-2.5 rounded-2xl border ${
+                  theme.isDark ? 'bg-slate-950/40 border-slate-800/80' : 'bg-white border-slate-100/80 shadow-sm'
+                }`}>
+                  <div className="flex items-center justify-center gap-1 text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
+                    <Droplets className="w-3 h-3 text-blue-500" /> Vapor Flow
+                  </div>
+                  <div className="text-xs font-bold text-slate-800 dark:text-slate-200">{weather.current?.relative_humidity_2m ?? '--'}%</div>
+                  <div className="text-[7.5px] text-slate-400 font-medium mt-0.5">{evapPerf.split(' (')[0]}</div>
                 </div>
               </div>
-            </div>
-            
-            <div className={`absolute right-[-20px] bottom-[-20px] opacity-10 pointer-events-none transform rotate-12 scale-110 ${theme.isDark ? 'text-indigo-500' : 'text-white'}`}>
-              {weatherAlert?.level === 'danger' ? <CloudRain className="w-64 h-64" /> : <Sun className="w-64 h-64" />}
-            </div>
-          </section>
-        )}
+
+            </motion.section>
+          );
+        })()}
 
         {/* AI Insight Box (New Feature) */}
         {dryness?.insight && (
@@ -971,6 +1707,139 @@ export default function App() {
             </div>
           </section>
         )}
+        {/* 🚨 Alarm Ringtone Control Room & Device Picker */}
+        <section className={`${theme.card} p-5 rounded-3xl border ${theme.isDark ? 'border-slate-700/60' : 'border-slate-100'} shadow-sm`}>
+          <div className="flex justify-between items-center mb-4">
+            <div className="flex items-center gap-2 opacity-55 uppercase tracking-widest text-[10px] font-bold text-slate-500">
+               <Bell className={`w-3.5 h-3.5 ${theme.isDark ? 'text-indigo-400' : 'text-blue-500'}`} /> Alarm Control & Ringtones
+            </div>
+            {completeAlarmActive && (
+              <span className="text-[9px] bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded-full animate-pulse uppercase">
+                🚨 RINGING
+              </span>
+            )}
+          </div>
+
+          <p className={`text-xs ${theme.isDark ? 'text-slate-400' : 'text-slate-500'} mb-4 leading-relaxed`}>
+            Select your preferred alert chime. This sound triggers immediately when rain hazards are detected or when your timer finishes!
+          </p>
+
+          <div className="grid grid-cols-2 gap-2 mb-4">
+            {[
+              { id: 'standard', name: 'Elegant Chime', desc: 'Resonant standard bell' },
+              { id: 'siren', name: 'Cyber Siren', desc: 'Sweep sci-fi hazard' },
+              { id: 'beeps', name: 'Echo Beeps', desc: 'Fast digital pulses' },
+              { id: 'bell', name: 'Resonant Bell', desc: 'Rich multi-harmonic' },
+            ].map(tone => (
+              <button
+                key={tone.id}
+                onClick={() => {
+                  setAlarmRingtone(tone.id);
+                  localStorage.setItem("laundry_alarm_ringtone", tone.id);
+                }}
+                className={`p-3 rounded-2xl border text-left transition-all relative ${
+                  alarmRingtone === tone.id
+                    ? 'bg-blue-50/50 dark:bg-slate-800 border-blue-500 text-blue-600 dark:text-blue-400'
+                    : 'bg-slate-50/55 dark:bg-slate-900/40 border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 text-slate-800 dark:text-slate-200'
+                }`}
+              >
+                <div className="font-bold text-xs">{tone.name}</div>
+                <div className="text-[9px] opacity-70 mt-0.5 leading-snug">{tone.desc}</div>
+                {alarmRingtone === tone.id && (
+                  <span className="absolute top-2 right-2 flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Device file audio picker */}
+          <div className={`p-3.5 rounded-2xl ${theme.isDark ? 'bg-slate-900/60' : 'bg-slate-50'} border ${theme.isDark ? 'border-slate-800' : 'border-slate-100'} mb-4`}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                📁 Select Chime File from Device
+              </span>
+              {alarmRingtone === 'custom' && (
+                <span className="text-[9px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-50 dark:bg-emerald-950/40 px-1.5 py-0.5 rounded">
+                  ACTIVE
+                </span>
+              )}
+            </div>
+            
+            <label className="flex items-center gap-3 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700/80 p-2.5 rounded-xl cursor-pointer transition-all shadow-sm">
+              <Volume2 className="w-4 h-4 text-blue-500" />
+              <div className="flex-1 text-left">
+                <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                  {customFileAudioUrl ? "Change Ringtone File" : "Choose audio file..."}
+                </div>
+                <div className="text-[9px] text-slate-400">Supports mp3, wav, m4a, ogg</div>
+              </div>
+              <input 
+                type="file" 
+                accept="audio/*" 
+                onChange={handleCustomAudioUpload}
+                className="hidden" 
+              />
+            </label>
+
+            {customFileAudioUrl && (
+              <button
+                onClick={() => {
+                  setAlarmRingtone("custom");
+                  localStorage.setItem("laundry_alarm_ringtone", "custom");
+                }}
+                className={`mt-2 w-full py-1.5 rounded-lg text-[10px] font-bold border ${
+                  alarmRingtone === "custom"
+                    ? 'bg-blue-100 text-blue-700 border-blue-200'
+                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                }`}
+              >
+                Use Uploaded Custom Tone
+              </button>
+            )}
+          </div>
+
+          {/* Demo Sound Play Button */}
+          <div className="flex gap-2">
+            <button
+              onClick={handleToggleDemoPlay}
+              className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold uppercase transition-all flex items-center justify-center gap-2 ${
+                isPlayingDemo
+                  ? 'bg-amber-100 text-amber-700 border border-amber-200 hover:bg-amber-200'
+                  : 'bg-blue-600 text-white font-bold hover:bg-blue-700 shadow-sm'
+              }`}
+            >
+              {isPlayingDemo ? (
+                <>
+                  <VolumeX className="w-4 h-4 animate-spin" />
+                  Stop Demo
+                </>
+              ) : (
+                <>
+                  <Volume2 className="w-4 h-4" />
+                  🔊 Test Sound
+                </>
+              )}
+            </button>
+
+            {(alarmActive || completeAlarmActive) && (
+              <button
+                onClick={() => {
+                  setAlarmMuted(true);
+                  setCompleteAlarmActive(false);
+                  setIsDryingComplete(false);
+                }}
+                className="flex-1 py-3 px-4 rounded-xl text-xs font-bold uppercase bg-rose-500 text-white hover:bg-rose-600 shadow-sm flex items-center justify-center gap-2 animate-pulse"
+              >
+                <VolumeX className="w-4 h-4" />
+                Silence/Stop Alarm
+              </button>
+            )}
+          </div>
+        </section>
+
         {/* Laundry Action Card & AI Voice control panel */}
         <section className={`${theme.card} p-6 rounded-3xl shadow-sm border transition-all relative overflow-hidden ${
           alarmActive && !alarmMuted
@@ -1072,8 +1941,13 @@ export default function App() {
             <div className="flex-1 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/50 rounded-2xl p-5 flex flex-col justify-center">
               {isDrying ? (
                 (() => {
-                  const baseMinutes = customTimerDuration !== null ? customTimerDuration : (dryness?.estimatedMinutes || 180);
-                  const totalMinutes = baseMinutes + customMinutesOffset;
+                  let base = customTimerDuration !== null ? customTimerDuration : (dryness?.estimatedMinutes || 180);
+                  if (fabricType === 'delicate') {
+                    base = Math.round(base * 0.7);
+                  } else if (fabricType === 'heavy') {
+                    base = Math.round(base * 1.4);
+                  }
+                  const totalMinutes = base + customMinutesOffset;
                   const totalSecondsRequired = totalMinutes * 60;
                   const elapsedSeconds = startTime ? Math.floor((nowTicker - startTime) / 1000) : 0;
                   const secondsRemaining = Math.max(0, totalSecondsRequired - elapsedSeconds);
@@ -1141,6 +2015,42 @@ export default function App() {
                   <p className="text-[10px] text-slate-400 mt-1">Start timer when you hang your clothes.</p>
                 </div>
               )}
+            </div>
+          </div>
+
+          {/* Custom Fabric Type Coefficient Selector */}
+          <div className="mb-5 p-3.5 bg-slate-50/50 dark:bg-slate-900/40 border border-slate-100 dark:border-slate-800/80 rounded-2xl">
+            <div className="flex justify-between items-center mb-2.5">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Shirt className="w-3.5 h-3.5 text-blue-500" /> Fabric Drying Preset Modifier
+              </span>
+              <span className="text-[9px] font-bold bg-blue-100 text-blue-800 dark:bg-slate-800 dark:text-blue-300 px-1.5 py-0.5 rounded">
+                Factor Scale
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'cotton', name: 'Cotton Load', factor: '1.0x', desc: 'Denim, shirts, standard laundry' },
+                { id: 'delicate', name: 'Delicate Silk', factor: '0.7x', desc: 'Silk, lightweight synthetic' },
+                { id: 'heavy', name: 'Heavy Blanket', factor: '1.4x', desc: 'Jeans, wool, heavy quilts' }
+              ].map(f => (
+                <button
+                  key={f.id}
+                  onClick={() => {
+                    setFabricType(f.id as any);
+                    localStorage.setItem("laundry_fabric_type", f.id);
+                  }}
+                  className={`p-2.5 rounded-xl border text-left transition-all ${
+                    fabricType === f.id
+                      ? 'bg-blue-50/50 dark:bg-slate-850 border-blue-500 text-blue-600 dark:text-blue-400'
+                      : 'bg-white dark:bg-slate-950/20 border-slate-200/50 dark:border-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-300'
+                  }`}
+                >
+                  <div className="font-extrabold text-[10px] leading-tight">{f.name}</div>
+                  <div className="text-[9.5px] font-mono mt-0.5 font-bold">{f.factor} Timer</div>
+                  <div className="text-[8px] opacity-60 mt-0.5 leading-snug truncate">{f.desc}</div>
+                </button>
+              ))}
             </div>
           </div>
 
@@ -1365,8 +2275,27 @@ export default function App() {
       <SettingsModal 
         isOpen={showSettings}
         onClose={() => setShowSettings(false)}
-        settings={appSettings}
-        onSave={setAppSettings}
+        settings={{ ...appSettings, voiceEnabled, voiceGender, voiceRate }}
+        onSave={(newSettings) => {
+          setAppSettings(newSettings);
+          if (newSettings.voiceEnabled !== undefined) {
+            setVoiceEnabled(newSettings.voiceEnabled);
+            localStorage.setItem("laundry_voice_enabled", String(newSettings.voiceEnabled));
+          }
+          if (newSettings.voiceGender) {
+            setVoiceGender(newSettings.voiceGender);
+            localStorage.setItem("laundry_voice_gender", newSettings.voiceGender);
+          }
+          if (newSettings.voiceRate !== undefined) {
+            setVoiceRate(newSettings.voiceRate);
+            localStorage.setItem("laundry_voice_rate", String(newSettings.voiceRate));
+          }
+        }}
+        emailLogsList={emailLogsList}
+        onClearLogs={async () => {
+          await clearEmailLogs();
+          syncEmailLogs();
+        }}
       />
     </div>
   );

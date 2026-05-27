@@ -43,8 +43,8 @@ export default function SearchModal({
           >
             <div className="flex justify-between items-center mb-6">
               <div>
-                <h2 className="text-2xl font-display font-bold text-slate-900">Search City</h2>
-                <p className="text-slate-500 text-sm font-medium">Find weather anywhere</p>
+                <h2 className="text-2xl font-display font-bold text-slate-900">Search Location & Postal Code</h2>
+                <p className="text-slate-500 text-sm font-medium">Track standard cities or global postal code zones</p>
               </div>
               <button 
                 onClick={onClose} 
@@ -60,7 +60,7 @@ export default function SearchModal({
               <input
                 autoFocus
                 type="text"
-                placeholder="Search city name..."
+                placeholder="Search by city name, postal code (e.g. 90210, SW1A), or zip..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 className="w-full bg-slate-50 border border-slate-100 rounded-2xl py-4 pl-12 pr-4 text-slate-900 font-medium focus:ring-4 focus:ring-blue-100 focus:bg-white outline-none transition-all"
